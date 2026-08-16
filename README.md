@@ -92,9 +92,23 @@ git-installed it takes the `rm -rf` path rather than leaving a backup folder,
 and disabling strips the widget's entry from `shell.json`. Note that this also
 discards the widget's settings — disabling is not a way to hide it temporarily.
 
-Skipping teardown leaves one file behind,
-`~/.local/state/omarchy/airpods-capabilities.json`, a few hundred bytes of
-remembered device capabilities.
+### Already removed it without teardown?
+
+Nothing is broken — verified by doing it. The plugin unloads cleanly, no
+process is left running, `shell.json` is tidied and no backup folder is left
+(a git-installed plugin is removed outright). What survives is the daemon,
+still running and still enabled at login, plus two small files:
+
+```bash
+systemctl --user disable --now airpods-tui          # if nothing else uses it
+rm -f ~/.local/state/omarchy/airpods-capabilities.json
+rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/omarchy-airpods.json"
+yay -R airpods-tui-bin                              # also reverts the DeviceID
+```
+
+The runtime file clears itself at the next reboot; the cache is a few hundred
+bytes of remembered device capabilities. Removing the package is what reverts
+`/etc/bluetooth/main.conf`.
 
 ## What it does
 

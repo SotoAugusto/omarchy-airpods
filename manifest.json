@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.sotoaugusto.airpods",
   "name": "AirPods",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "author": "Augusto Soto",
   "license": "MIT",
   "description": "Battery, noise control and ear detection for AirPods, driven through the airpods-tui daemon",

@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.6 — 2026-08-16
+
+### Changed
+
+- Documented what removing the plugin the ordinary way actually leaves behind,
+  and how to clean it up afterwards. `teardown` is deleted along with the
+  plugin, so anyone who removed it first had no script left to run and nothing
+  telling them what survived.
+- The uninstall row now names the consequence of skipping teardown — the daemon
+  keeps running and starts at every login — rather than only explaining why it
+  asks before stopping it.
+
+Verified by removing the plugin through the plain `omarchy plugin remove`
+workflow, which is what the Setup → Plugins → Remove Plugin menu runs: no
+process is left behind, `shell.json` is tidied, and a git-installed plugin
+leaves no backup folder.
+
 ## 0.1.5 — 2026-08-16
 
 ### Fixed
