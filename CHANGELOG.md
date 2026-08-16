@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.4 — 2026-08-16
+
+### Added
+
+- **Uninstall this plugin** in the panel settings, copying the whole removal
+  line in the only order that works. `teardown` lives inside the plugin
+  directory, so removing the plugin first deletes the script meant to clean up
+  after it; chaining them removes the chance to get that wrong.
+
+### Fixed
+
+- The settings section, and therefore uninstall, was gated behind an active
+  connection and known device capabilities — invisible on a fresh install where
+  nothing works, which is exactly when someone wants to remove it. The section
+  now opens regardless; the device-specific controls inside keep their own
+  guards.
+
 ## 0.1.3 — 2026-08-16
 
 ### Added

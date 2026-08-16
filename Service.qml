@@ -429,6 +429,16 @@ Item {
   readonly property string setupCommand:
     pluginDir + "setup"
 
+  // One line, in the only order that works. `teardown` lives inside the plugin
+  // directory, so running `plugin remove` first deletes the script that was
+  // supposed to clean up after it — chaining them removes the chance to get
+  // that wrong. Omarchy runs nothing from a plugin at removal time, so this
+  // cannot be automatic; it can at least be one paste instead of three.
+  readonly property string removeCommand:
+    pluginDir + "teardown && omarchy plugin remove "
+    + ((manifest && manifest.id) || "io.github.sotoaugusto.airpods")
+    + " && omarchy restart shell"
+
   // Ordered by what blocks what: no binary means the rest cannot be judged.
   readonly property var prereqRows: {
     if (!checkedPrereqs) return []

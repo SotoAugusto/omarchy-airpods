@@ -72,10 +72,21 @@ omarchy plugin remove io.github.sotoaugusto.airpods
 omarchy restart shell
 ```
 
-Run `teardown` **first** — removing the plugin deletes the script with it. It
-clears the plugin's own state, then offers to stop the daemon and points at the
+Or open the panel's settings (the gear) and click **Uninstall this plugin**,
+which copies that whole line — correctly ordered — to your clipboard. It stays
+reachable even when nothing is connected, since that is when you are most
+likely to want it.
+
+Run `teardown` **first** — removing the plugin deletes the script with it,
+which is why the copied command chains them rather than listing them. It clears
+the plugin's own state, then offers to stop the daemon and points at the
 package, rather than assuming: both are shared with any other AirPods tool you
 might use.
+
+`omarchy plugin remove` needs no cleanup of its own: because the plugin is
+git-installed it takes the `rm -rf` path rather than leaving a backup folder,
+and disabling strips the widget's entry from `shell.json`. Note that this also
+discards the widget's settings — disabling is not a way to hide it temporarily.
 
 Skipping teardown leaves one file behind,
 `~/.local/state/omarchy/airpods-capabilities.json`, a few hundred bytes of

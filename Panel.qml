@@ -438,7 +438,9 @@ Panel {
 
             PanelActionButton {
               iconText: "󰒓"
-              visible: root.service ? root.service.hasExtraSettings : false
+              // Always available: the section holds uninstall as well as device
+              // config, and uninstall is most wanted precisely when nothing is
+              // connected and no capabilities are known.
               tooltipText: root.settingsOpen ? "Hide settings" : "More settings"
               foreground: root.settingsOpen ? Color.accent : root.dim
               hoverColor: root.barForeground
@@ -724,17 +726,18 @@ Panel {
         // ---------- More settings ----------
         PanelSeparator {
           width: parent.width
-          visible: root.settingsOpen && root.connected
+          visible: root.settingsOpen
         }
 
         Column {
           width: parent.width
           spacing: Style.space(10)
-          visible: root.settingsOpen && root.connected
+          visible: root.settingsOpen
 
           Item {
             width: parent.width
-            height: settingsHeader.implicitHeight
+            height: visible ? settingsHeader.implicitHeight : 0
+            visible: root.connected
 
             PanelSectionHeader {
               id: settingsHeader
@@ -763,7 +766,7 @@ Panel {
           Column {
             width: parent.width
             spacing: Style.space(4)
-            visible: root.service ? root.service.reportsAncStrength : false
+            visible: root.connected && root.service && root.service.reportsAncStrength
             opacity: root.mode === "adaptive" ? 1.0 : 0.55
 
             Item {
@@ -810,7 +813,7 @@ Panel {
               required property var modelData
               width: parent.width
               height: visible ? extraSwitch.implicitHeight : 0
-              visible: modelData.supported
+              visible: root.connected && modelData.supported
 
               Text {
                 anchors.left: parent.left
@@ -843,6 +846,7 @@ Panel {
           Column {
             width: parent.width
             spacing: Style.space(6)
+            visible: root.connected
 
             Text {
               text: "Rename"
@@ -874,6 +878,75 @@ Panel {
               font.pixelSize: Style.font.caption
             }
           }
+
+          PanelSeparator { width: parent.width }
+
+          // Uninstall belongs next to the other once-ever action rather than in a
+          // README the reader has already closed. One line, correctly ordered.
+          Rectangle {
+            width: parent.width
+            height: removeCol.implicitHeight + Style.space(12)
+            radius: Style.cornerRadius > 0 ? Style.space(6) : 0
+            color: removeMouse.containsMouse ? Util.alpha(Color.urgent, 0.10) : "transparent"
+            border.width: 1
+            border.color: Util.alpha(Color.urgent, 0.35)
+
+            MouseArea {
+              id: removeMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: {
+                if (root.service) root.service.copyToClipboard(root.service.removeCommand)
+                root.copiedRow = "__remove__"
+                copiedReset.restart()
+              }
+            }
+
+            Column {
+              id: removeCol
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.leftMargin: Style.space(8)
+              anchors.rightMargin: Style.space(8)
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.space(3)
+
+              Item {
+                width: parent.width
+                height: removeLabel.implicitHeight
+
+                Text {
+                  id: removeLabel
+                  anchors.left: parent.left
+                  text: "Uninstall this plugin"
+                  color: root.barForeground
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.body
+                }
+
+                Text {
+                  anchors.right: parent.right
+                  anchors.verticalCenter: removeLabel.verticalCenter
+                  text: root.copiedRow === "__remove__" ? "copied" : "󰆏 copy"
+                  color: root.copiedRow === "__remove__" ? Color.accent : root.dim
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
+                }
+              }
+
+              Text {
+                width: parent.width
+                wrapMode: Text.WordWrap
+                text: "Cleans up, then removes. The daemon and the BlueZ DeviceID are "
+                    + "shared with other AirPods tools, so teardown asks before touching them."
+                color: root.dim
+                font.family: Style.font.family
+                font.pixelSize: Style.font.caption
+              }
+            }
+          }
+
 
         }
 
