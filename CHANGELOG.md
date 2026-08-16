@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.7 — 2026-08-16
+
+### Fixed
+
+- The bar icon is now shown whenever setup is incomplete, regardless of
+  `hideWhenDisconnected`. It was hidden while nothing was connected — which is
+  the normal state of a fresh install — so the setup checklist was unreachable
+  in exactly the case it exists for. Installing the plugin produced no icon, no
+  way to open the panel, and every appearance of something broken rather than
+  something unconfigured.
+- While setup is incomplete the icon is a wrench in the urgent colour rather
+  than a headphone, so it reads as needing attention instead of as a device
+  that happens to be away, and the tooltip says what to do.
+
+The icon returns to hiding on its own once the prerequisites are met, without
+a restart — the check re-runs every 20 seconds.
+
 ## 0.1.6 — 2026-08-16
 
 ### Changed

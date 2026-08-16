@@ -38,10 +38,12 @@ omarchy restart shell
 ~/.config/omarchy/plugins/io.github.sotoaugusto.airpods/setup
 ```
 
-If you skip `setup`, the plugin will tell you what is missing: the panel shows
-a checklist of the three prerequisites, and clicking any unmet row copies the
-exact command to your clipboard. It re-checks every 20 seconds, so it clears
-itself as you go.
+If you skip `setup`, the plugin will tell you what is missing. While anything
+is outstanding the bar shows a wrench in the urgent colour — even with nothing
+connected, so there is always something to click — and the panel behind it
+lists the three prerequisites. Clicking any unmet row copies its exact command
+to your clipboard. The check re-runs every 20 seconds, so the list and the
+wrench both clear themselves as you go.
 
 `setup` is the only step that needs your attention, and only the first time.
 It installs the [`airpods-tui`](https://github.com/annoyedmilk/airpods-tui)

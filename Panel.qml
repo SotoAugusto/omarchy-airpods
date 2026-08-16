@@ -40,9 +40,19 @@ Panel {
   readonly property int lowThreshold: setting("lowBatteryThreshold", 20)
   readonly property bool batteryLow: lowThreshold > 0 && lowestBattery >= 0 && lowestBattery <= lowThreshold
 
+  // Something is missing and the user has to act on it. The setup checklist
+  // lives in the panel, and the panel is only reachable through this icon.
+  readonly property bool needsSetup:
+    service ? (service.checkedPrereqs && !service.prereqsMet) : false
+
   // A widget that vanishes is the honest default: AirPods are absent most of
   // the day, and a permanently dimmed glyph is just noise in the bar.
-  visible: connected || !setting("hideWhenDisconnected", true)
+  //
+  // Except while setup is incomplete. Hiding then makes the checklist
+  // unreachable in precisely the case it exists for: a fresh install with
+  // nothing connected shows no icon, so there is nothing to click, and the
+  // plugin looks broken rather than unconfigured.
+  visible: connected || needsSetup || !setting("hideWhenDisconnected", true)
 
   readonly property color dim: Qt.darker(barForeground, 1.45)
 
@@ -75,7 +85,13 @@ Panel {
   // cannot already see. It carries the active mode instead, falling back to a
   // boxed headphone for the few seconds after a reconnect before the mode
   // arrives.
-  readonly property string barGlyph: connected && modeGlyph !== "" ? modeGlyph : "󰋌"
+  readonly property string barGlyph: {
+    if (connected && modeGlyph !== "") return modeGlyph
+    // A wrench reads as "this needs configuring", which is exactly the state,
+    // and distinguishes it from a device that is merely away.
+    if (needsSetup) return "󰖷"
+    return "󰋌"
+  }
 
   // Semantics over volume metaphors. A crossed-out speaker says "muted",
   // which is the opposite of what ANC does, and the old Transparency glyph was
@@ -179,6 +195,7 @@ Panel {
   // Hovering the bar should answer the question without opening anything:
   // what is connected, how much charge, which mode, where the buds are.
   readonly property string barTooltip: {
+    if (needsSetup) return "AirPods — setup incomplete\nClick to see what is missing"
     if (!daemonRunning) return "AirPods — daemon not running"
     if (!connected) return "AirPods — not connected"
     var parts = [deviceName]
@@ -346,7 +363,9 @@ Panel {
     hasVisualContent: root.vertical ? root.verticalLines.length > 0 : text !== ""
     fixedHeight: root.vertical ? root.verticalLines.length * Style.bar.iconSlot : -1
     tooltipText: root.barTooltip
-    foreground: root.batteryLow ? Color.urgent : (root.bar ? root.bar.barForeground : Color.foreground)
+    foreground: (root.batteryLow || root.needsSetup)
+      ? Color.urgent
+      : (root.bar ? root.bar.barForeground : Color.foreground)
     onPressed: function(b) {
       if (b === Qt.RightButton) root.toggleAncTransparency()
       else if (b === Qt.MiddleButton) root.cycleMode()
