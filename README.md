@@ -49,6 +49,41 @@ omarchy plugin add https://github.com/SotoAugusto/omarchy-airpods --enable
 omarchy restart shell
 ```
 
+## Removal
+
+```bash
+omarchy plugin remove io.github.sotoaugusto.airpods
+omarchy restart shell
+```
+
+That removes the plugin and its bar entry. Two things live outside the plugin
+directory and are left behind deliberately, since removing a shell widget
+should not reconfigure your audio or Bluetooth:
+
+```bash
+rm -f ~/.local/state/omarchy/airpods-capabilities.json   # remembered device capabilities
+```
+
+The `airpods-tui` daemon and the BlueZ `DeviceID` line belong to that package,
+not to this plugin — remove them with `yay -R airpods-tui-bin`, whose own hook
+reverts `/etc/bluetooth/main.conf`.
+
+## What it changes on your system
+
+Nothing at install time. While running it may, all of it documented and
+reversible:
+
+- write remembered device capabilities to
+  `~/.local/state/omarchy/airpods-capabilities.json` and live state to
+  `$XDG_RUNTIME_DIR/omarchy-airpods.json`
+- re-select the AAC PipeWire card profile on connect — turn off with the
+  **Force AAC on connect** setting
+- restart the `airpods-tui` **user** unit if BlueZ and the daemon disagree for
+  30 seconds, capped at three attempts
+
+It never uses sudo, never edits your Hyprland or shell config, and never
+touches `/etc`.
+
 ## What it does
 
 - **Battery** per bud and case, with charging state and a low-battery warning
