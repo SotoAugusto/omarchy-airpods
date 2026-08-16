@@ -1,0 +1,66 @@
+# Changelog
+
+## 0.1.0 — 2026-08-16
+
+First release.
+
+### Added
+
+- Battery per bud and case, with charging state, a low-battery notification at
+  20% and 10%, and a tinted bar label below the threshold.
+- Time remaining, projected from the measured drain rate of the lowest bud.
+  Stays silent until the samples can support an answer — ten minutes and a 2%
+  drop — because AirPods report in 1% steps and a shorter window produces a
+  confident wrong number.
+- Noise control: Off, Noise Cancellation, Transparency, Adaptive. Icon-only
+  buttons with the full name in the tooltip and in the hero line.
+- Per-bud ear detection, shown against each battery row, so "one in ear" says
+  which one.
+- The config the device reports: adaptive ANC strength, ANC with one bud,
+  adaptive volume, volume swipe, sleep detection, conversation awareness.
+  Controls appear only for identifiers the AirPods have actually reported.
+- Rename, at the bottom of the folded settings section.
+- AAC pinning. The negotiated codec was observed dropping to SBC-XQ on a
+  reconnect with no user action, so the AAC card profile is re-selected on
+  connect. Retries until the bluez card exists, which took up to 12s in
+  testing. Turn it off with **Force AAC on connect**.
+- Keyboard shortcuts behind a keyboard button: `1`–`4` select a mode, `c`
+  cycles, `a` toggles conversation awareness, `s` and `k` fold the settings and
+  shortcut lists. The list also documents the mouse and the global bindings, so
+  the undiscoverable parts are written down somewhere.
+- Bar tooltip with device, per-bud charge, mode and placement.
+- A watchdog for the race that broke first-time setup: BlueZ reporting the
+  AirPods connected while the daemon insists otherwise. After 30 seconds of
+  disagreement it restarts the `airpods-tui` **user** unit, capped at three
+  attempts. Matching is by MAC, so another headset cannot trigger it.
+- `tests/run` — the wire protocol against a mock daemon, and the battery
+  estimate on a mocked clock. No AirPods, BlueZ or daemon required.
+
+### Notes on the device
+
+Behaviour found by measurement rather than documentation, and worth knowing
+before filing a bug against this plugin. The full list is in the README.
+
+- Listening mode echoes back; config toggles are applied **silently** and only
+  surface after a reconnect. Toggles are therefore held optimistically, so a
+  switch does not sit on its old value looking broken.
+- Mode changes are refused unless a bud is in an ear — in the case and merely
+  out of the ear both fail, and the write is accepted before being ignored.
+- The config block does not survive a reconnect, so capabilities are cached
+  per-MAC in `~/.local/state/omarchy/airpods-capabilities.json`. Without that
+  the panel would hide controls that work.
+- `AllowOffOption` is never reported by AirPods Pro (`0x2024`) yet Off works,
+  so absence is not treated as refusal.
+- The case reports its charge only while the buds are inside it. Out of the
+  case it sends level 0 / disconnected, which is shown as unavailable rather
+  than as 0%.
+
+### Known limitations
+
+- A config write the device *rejects* shows as applied until the next
+  reconnect, because rejections are as silent as acceptances.
+- Drain history is in memory, so the time estimate resets when the shell
+  restarts.
+- `shortcuts` and `settings` use a direct IPC target, which reaches one
+  arbitrary instance on a multi-monitor setup. Device actions are unaffected.
+- Untested on AirPods Max — the "Headphones" battery row has never rendered.
