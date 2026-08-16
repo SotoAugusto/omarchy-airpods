@@ -290,6 +290,15 @@ Panel {
   // is one click away rather than absent.
   property bool settingsOpen: false
 
+  // Which setup row last had its command copied, so the button can confirm.
+  property string copiedRow: ""
+
+  Timer {
+    id: copiedReset
+    interval: 2000
+    onTriggered: root.copiedRow = ""
+  }
+
   function toggleSettings() { settingsOpen = !settingsOpen }
 
   // Built here rather than in the delegate so the rows carry plain values —
@@ -1034,6 +1043,200 @@ Panel {
           }
         }
 
+
+
+        // ---------- Setup checklist ----------
+
+        // Shown only while something is actually missing. Each unmet row carries the
+        // exact command and a button that copies it, because the alternative is
+        // retyping a sed expression from a README by hand.
+        Column {
+          width: parent.width
+          spacing: Style.space(8)
+          visible: root.service ? (root.service.checkedPrereqs && !root.service.prereqsMet) : false
+
+          PanelSectionHeader {
+            width: parent.width
+            text: "Setup"
+            foreground: root.barForeground
+          }
+
+          Text {
+            width: parent.width
+            wrapMode: Text.WordWrap
+            text: "Omarchy never runs anything from a plugin, so these are yours to run. "
+                + "Click a row to copy its command."
+            color: root.dim
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+          }
+
+          Repeater {
+            model: root.service ? root.service.prereqRows : []
+
+            Rectangle {
+              id: prereqRow
+              required property var modelData
+              width: parent.width
+              height: prereqCol.implicitHeight + Style.space(12)
+              radius: Style.cornerRadius > 0 ? Style.space(6) : 0
+              color: rowMouse.containsMouse && !prereqRow.modelData.ok
+                ? Util.alpha(root.barForeground, 0.07)
+                : "transparent"
+              border.width: 1
+              border.color: prereqRow.modelData.ok
+                ? "transparent"
+                : Util.alpha(root.barForeground, 0.2)
+
+              MouseArea {
+                id: rowMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                enabled: !prereqRow.modelData.ok
+                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                onClicked: {
+                  if (root.service) root.service.copyToClipboard(prereqRow.modelData.command)
+                  root.copiedRow = prereqRow.modelData.label
+                  copiedReset.restart()
+                }
+              }
+
+              Column {
+                id: prereqCol
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.leftMargin: Style.space(8)
+                anchors.rightMargin: Style.space(8)
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Style.space(3)
+
+                Item {
+                  width: parent.width
+                  height: prereqLabel.implicitHeight
+
+                  Text {
+                    id: prereqMark
+                    anchors.left: parent.left
+                    text: prereqRow.modelData.ok ? "󰄬" : "󰅚"
+                    color: prereqRow.modelData.ok ? Color.accent : Color.urgent
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.body
+                  }
+
+                  Text {
+                    id: prereqLabel
+                    anchors.left: prereqMark.right
+                    anchors.leftMargin: Style.space(8)
+                    anchors.right: prereqHint.left
+                    anchors.rightMargin: Style.space(8)
+                    text: prereqRow.modelData.label
+                    elide: Text.ElideRight
+                    color: root.barForeground
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.body
+                  }
+
+                  Text {
+                    id: prereqHint
+                    anchors.right: parent.right
+                    anchors.verticalCenter: prereqLabel.verticalCenter
+                    text: root.copiedRow === prereqRow.modelData.label
+                      ? "copied"
+                      : (prereqRow.modelData.ok ? prereqRow.modelData.detail : "󰆏 copy")
+                    color: root.copiedRow === prereqRow.modelData.label ? Color.accent : root.dim
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.caption
+                  }
+                }
+
+                // The command itself, so it can be read before it is trusted.
+                Text {
+                  width: parent.width
+                  visible: !prereqRow.modelData.ok
+                  text: prereqRow.modelData.command
+                  wrapMode: Text.WrapAnywhere
+                  maximumLineCount: 2
+                  elide: Text.ElideRight
+                  color: root.dim
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
+                }
+              }
+            }
+          }
+
+          // One command that does all of the above, for anyone who would rather not
+          // read three.
+          Rectangle {
+            width: parent.width
+            height: allCol.implicitHeight + Style.space(12)
+            radius: Style.cornerRadius > 0 ? Style.space(6) : 0
+            color: allMouse.containsMouse ? Util.alpha(root.barForeground, 0.07) : "transparent"
+            border.width: 1
+            border.color: Util.alpha(Color.accent, 0.45)
+
+            MouseArea {
+              id: allMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: {
+                if (root.service) root.service.copyToClipboard(root.service.setupCommand)
+                root.copiedRow = "__setup__"
+                copiedReset.restart()
+              }
+            }
+
+            Column {
+              id: allCol
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.leftMargin: Style.space(8)
+              anchors.rightMargin: Style.space(8)
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.space(3)
+
+              Item {
+                width: parent.width
+                height: allLabel.implicitHeight
+
+                Text {
+                  id: allLabel
+                  anchors.left: parent.left
+                  text: "Do all of it"
+                  color: root.barForeground
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.body
+                }
+
+                Text {
+                  anchors.right: parent.right
+                  anchors.verticalCenter: allLabel.verticalCenter
+                  text: root.copiedRow === "__setup__" ? "copied" : "󰆏 copy"
+                  color: root.copiedRow === "__setup__" ? Color.accent : root.dim
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
+                }
+              }
+
+              Text {
+                width: parent.width
+                text: root.service ? root.service.setupCommand : ""
+                wrapMode: Text.WrapAnywhere
+                maximumLineCount: 2
+                elide: Text.ElideRight
+                color: root.dim
+                font.family: Style.font.family
+                font.pixelSize: Style.font.caption
+              }
+            }
+          }
+        }
+
+        PanelSeparator {
+          width: parent.width
+          visible: root.service ? (root.service.checkedPrereqs && !root.service.prereqsMet) : false
+        }
 
         // ---------- Nothing to control ----------
         Text {

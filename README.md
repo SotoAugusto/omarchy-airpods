@@ -38,6 +38,11 @@ omarchy restart shell
 ~/.config/omarchy/plugins/io.github.sotoaugusto.airpods/setup
 ```
 
+If you skip `setup`, the plugin will tell you what is missing: the panel shows
+a checklist of the three prerequisites, and clicking any unmet row copies the
+exact command to your clipboard. It re-checks every 20 seconds, so it clears
+itself as you go.
+
 `setup` is the only step that needs your attention, and only the first time.
 It installs the [`airpods-tui`](https://github.com/annoyedmilk/airpods-tui)
 daemon if missing, adds `DeviceID = bluetooth:004C:0000:0000` to

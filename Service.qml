@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Bluetooth
+import qs.Commons
 
 // Everything that must exist once, not once per screen.
 //
@@ -367,6 +368,98 @@ Item {
     var clamped = Math.max(0, Math.min(100, Math.round(value)))
     holdFlag("ancStrength", clamped)
     run(["set", "auto-anc-strength", String(clamped)])
+  }
+
+  // ---- prerequisites -------------------------------------------------------
+
+  // Three things must be true before any of this works, and when one is not,
+  // the symptom is identical: an empty widget. Checking them explicitly turns
+  // "it does nothing" into "here is the one command you are missing".
+  //
+  // Checked rather than assumed, because the failure that costs people the
+  // most — a pairing made before BlueZ identified as Apple — looks exactly
+  // like a bug in this plugin.
+  property bool checkedPrereqs: false
+  property bool hasDaemonBinary: true
+  property bool hasDeviceId: true
+  property bool unitEnabled: true
+
+  Process {
+    id: prereqProc
+    command: ["bash", "-c",
+      // One shot rather than three processes. Each line is a plain yes/no so
+      // the QML side does no parsing worth getting wrong.
+      "command -v airpods-tui >/dev/null 2>&1 && echo binary=yes || echo binary=no; " +
+      "grep -qE '^[[:space:]]*DeviceID[[:space:]]*=[[:space:]]*bluetooth:004C:' " +
+      "/etc/bluetooth/main.conf 2>/dev/null && echo deviceid=yes || echo deviceid=no; " +
+      "systemctl --user is-enabled airpods-tui >/dev/null 2>&1 && echo enabled=yes || echo enabled=no"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var lines = String(text || "").trim().split("\n")
+        for (var i = 0; i < lines.length; i++) {
+          var parts = lines[i].split("=")
+          if (parts[0] === "binary") root.hasDaemonBinary = parts[1] === "yes"
+          else if (parts[0] === "deviceid") root.hasDeviceId = parts[1] === "yes"
+          else if (parts[0] === "enabled") root.unitEnabled = parts[1] === "yes"
+        }
+        root.checkedPrereqs = true
+      }
+    }
+  }
+
+  function checkPrereqs() {
+    if (prereqProc.running) return
+    prereqProc.running = true
+  }
+
+  // Re-checked after the user has plausibly acted on the advice, so the list
+  // clears itself rather than needing a shell restart to notice.
+  Timer {
+    interval: 20000
+    repeat: true
+    running: root.checkedPrereqs && !root.prereqsMet
+    onTriggered: root.checkPrereqs()
+  }
+
+  Component.onCompleted: checkPrereqs()
+
+  readonly property bool prereqsMet: hasDaemonBinary && hasDeviceId && unitEnabled
+
+  readonly property string setupCommand:
+    pluginDir + "setup"
+
+  // Ordered by what blocks what: no binary means the rest cannot be judged.
+  readonly property var prereqRows: {
+    if (!checkedPrereqs) return []
+    var rows = []
+    rows.push({
+      ok: hasDaemonBinary,
+      label: "airpods-tui daemon",
+      detail: hasDaemonBinary ? "installed" : "not installed",
+      command: "yay -S airpods-tui-bin"
+    })
+    rows.push({
+      ok: hasDeviceId,
+      label: "BlueZ identifies as Apple",
+      detail: hasDeviceId ? "DeviceID set" : "DeviceID missing — needs sudo",
+      command: "sudo sed -i '/^\\[General\\]/a DeviceID = bluetooth:004C:0000:0000'"
+             + " /etc/bluetooth/main.conf && sudo systemctl restart bluetooth"
+    })
+    rows.push({
+      ok: unitEnabled,
+      label: "Daemon starts at login",
+      detail: unitEnabled ? "enabled" : "not enabled",
+      command: "systemctl --user enable --now airpods-tui"
+    })
+    return rows
+  }
+
+  function copyToClipboard(value) {
+    var text = String(value || "")
+    if (text === "") return
+    Quickshell.execDetached(["bash", "-c",
+                             "printf %s " + Util.shellQuote(text) + " | wl-copy"])
   }
 
   // ---- starting the daemon -------------------------------------------------

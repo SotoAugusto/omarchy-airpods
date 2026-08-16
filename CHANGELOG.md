@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.3 — 2026-08-16
+
+### Added
+
+- A setup checklist in the panel. The plugin now checks its three
+  prerequisites — the daemon binary, the BlueZ `DeviceID`, and whether the
+  user unit is enabled — and when one is missing it says which, shows the
+  exact command, and copies it to the clipboard on click. Every unmet cause
+  otherwise produces the same symptom: an empty widget.
+- A "Do all of it" row that copies the path to `setup`, for anyone who would
+  rather run one command than three.
+
+The checklist appears only while something is actually missing, and re-checks
+every 20 seconds so it clears itself once the commands have been run, rather
+than needing a shell restart to notice.
+
 ## 0.1.2 — 2026-08-16
 
 ### Added
