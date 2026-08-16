@@ -1,0 +1,600 @@
+#!/usr/bin/env python3
+"""Bridge between the airpods-tui daemon and the Omarchy shell.
+
+The daemon speaks a length-prefixed JSON protocol over a Unix socket:
+4-byte big-endian length, then a JSON payload. QML cannot frame that
+comfortably, so this owns the socket and exposes two shapes the shell can
+actually consume — a state file it can watch, and one-shot commands.
+
+  watch          maintain the state file, following the daemon across restarts
+  status         print the current state once
+  set-mode MODE  off | anc | transparency | adaptive
+  set ID BYTE    any control identifier, by number or name
+  rename NAME    rename the connected AirPods
+
+Wire details are derived from airpods-tui's src/ipc.rs and
+src/bluetooth/aacp.rs. Identifiers and enum values serialize as integers
+(serde's Serialize_repr), not names, which is why the tables below are
+numeric.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import socket
+import struct
+import sys
+import tempfile
+import time
+
+# ControlCommandIdentifiers — src/bluetooth/aacp.rs
+IDENTIFIERS = {
+    "mic-mode": 0x01,
+    "ear-detection": 0x0A,
+    "listening-mode": 0x0D,
+    "single-click": 0x14,
+    "double-click": 0x15,
+    "click-hold": 0x16,
+    "listening-mode-configs": 0x1A,
+    "one-bud-anc": 0x1B,
+    "auto-answer": 0x1E,
+    "chime-volume": 0x1F,
+    "volume-swipe": 0x25,
+    "adaptive-volume": 0x26,
+    "conversation-detect": 0x28,
+    "hearing-aid": 0x2C,
+    "auto-anc-strength": 0x2E,
+    "allow-off-option": 0x34,
+    "allow-auto-connect": 0x36,
+    "stem-config": 0x39,
+}
+
+IDENTIFIERS["sleep-detection"] = 0x35
+
+LISTENING_MODE = IDENTIFIERS["listening-mode"]
+
+# Config the AirPods report as a plain on/off byte: 0x01 enabled, 0x02
+# disabled. state key -> identifier. Everything here is both read and written
+# through the same table, so adding a setting is one line.
+TOGGLES = {
+    "conversationAwareness": IDENTIFIERS["conversation-detect"],
+    "earDetection": IDENTIFIERS["ear-detection"],
+    "oneBudAnc": IDENTIFIERS["one-bud-anc"],
+    "adaptiveVolume": IDENTIFIERS["adaptive-volume"],
+    "sleepDetection": IDENTIFIERS["sleep-detection"],
+    "volumeSwipe": IDENTIFIERS["volume-swipe"],
+}
+
+# Config carrying a magnitude in the first byte rather than a flag.
+LEVELS = {
+    "ancStrength": IDENTIFIERS["auto-anc-strength"],
+}
+
+# AllowOffOption is neither: it gates the mode list rather than being a
+# user-facing switch, and its absence means "allowed" (see blank_state).
+ALLOW_OFF = IDENTIFIERS["allow-off-option"]
+
+TOGGLES_BY_ID = {ident: name for name, ident in TOGGLES.items()}
+LEVELS_BY_ID = {ident: name for name, ident in LEVELS.items()}
+
+# AirPodsNoiseControlMode — src/devices/enums.rs
+MODES = {"off": 1, "anc": 2, "transparency": 3, "adaptive": 4}
+MODE_NAMES = {1: "off", 2: "anc", 3: "transparency", 4: "adaptive"}
+
+# BatteryComponent — src/bluetooth/aacp.rs
+COMPONENTS = {1: "headphone", 2: "right", 4: "left", 8: "case"}
+# BatteryStatus — same file
+BATTERY_STATUS = {1: "charging", 2: "not_charging", 4: "disconnected", 5: "in_use"}
+# EarDetectionStatus — same file
+EAR_STATUS = {0: "in_ear", 1: "out_of_ear", 2: "in_case", 3: "disconnected"}
+
+
+def runtime_dir() -> str:
+    return os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+
+
+def socket_path() -> str:
+    return os.path.join(runtime_dir(), "airpods-tui.sock")
+
+
+# Set by --state so the shell and the bridge cannot disagree on the location;
+# the shell computes it once and passes it to both `watch` and the commands.
+STATE_OVERRIDE: str | None = None
+
+
+def state_path() -> str:
+    return STATE_OVERRIDE or os.path.join(runtime_dir(), "omarchy-airpods.json")
+
+
+def connect(timeout: float = 5.0) -> socket.socket:
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.settimeout(timeout)
+    sock.connect(socket_path())
+    return sock
+
+
+def write_msg(sock: socket.socket, payload) -> None:
+    data = json.dumps(payload).encode()
+    sock.sendall(struct.pack(">I", len(data)) + data)
+
+
+def read_exact(sock: socket.socket, count: int) -> bytes:
+    chunks = []
+    remaining = count
+    while remaining:
+        chunk = sock.recv(remaining)
+        if not chunk:
+            raise ConnectionError("daemon closed the connection")
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
+def read_msg(sock: socket.socket):
+    (length,) = struct.unpack(">I", read_exact(sock, 4))
+    if length > 16 * 1024 * 1024:
+        raise ValueError("frame too large")
+    return json.loads(read_exact(sock, length))
+
+
+# Drain samples for the runtime estimate: [(monotonic seconds, level)] for the
+# lowest bud. Kept in memory only — a level from before a charge, a long
+# suspend, or a different wearing session says nothing about the current
+# discharge, and all three are hard to detect from a persisted file.
+BATTERY_HISTORY: list[tuple[float, int]] = []
+
+# Below this the two samples are too close together, or the drop too small, to
+# divide by without turning quantisation noise into a confident wrong answer.
+MIN_SPAN_SECONDS = 600
+MIN_DROP_PERCENT = 2
+# A gap this long means the buds were away, asleep, or charging unobserved.
+MAX_GAP_SECONDS = 1800
+WINDOW_SECONDS = 5400
+
+
+def update_estimate(state: dict) -> None:
+    """Project a time-to-empty from how fast the lowest bud is actually falling.
+
+    A percentage tells you where you are; minutes tell you whether you can take
+    the next call. Uses the lowest bud because that is the one that ends the
+    session, and only reports once the samples can support it.
+    """
+    levels = [
+        state["battery"][name]["level"]
+        for name in ("left", "right", "headphone")
+        if name in state["battery"] and state["battery"][name]["level"] >= 0
+    ]
+    charging = any(
+        state["battery"].get(name, {}).get("charging")
+        for name in ("left", "right", "headphone")
+    )
+
+    if not levels or charging:
+        BATTERY_HISTORY.clear()
+        state["minutesLeft"] = -1
+        return
+
+    now = time.monotonic()
+    lowest = min(levels)
+
+    if BATTERY_HISTORY:
+        last_time, last_level = BATTERY_HISTORY[-1]
+        # A rise means it charged while we were not looking; the old slope is
+        # describing a discharge that is over.
+        if now - last_time > MAX_GAP_SECONDS or lowest > last_level:
+            BATTERY_HISTORY.clear()
+
+    if not BATTERY_HISTORY or BATTERY_HISTORY[-1][1] != lowest:
+        BATTERY_HISTORY.append((now, lowest))
+
+    while BATTERY_HISTORY and now - BATTERY_HISTORY[0][0] > WINDOW_SECONDS:
+        BATTERY_HISTORY.pop(0)
+
+    if len(BATTERY_HISTORY) < 2:
+        state["minutesLeft"] = -1
+        return
+
+    first_time, first_level = BATTERY_HISTORY[0]
+    span = now - first_time
+    drop = first_level - lowest
+    if span < MIN_SPAN_SECONDS or drop < MIN_DROP_PERCENT:
+        state["minutesLeft"] = -1
+        return
+
+    per_second = drop / span
+    state["minutesLeft"] = int(lowest / per_second / 60)
+
+
+def cache_path() -> str:
+    base = os.environ.get("XDG_STATE_HOME", os.path.expanduser("~/.local/state"))
+    return os.path.join(base, "omarchy", "airpods-capabilities.json")
+
+
+def load_cache() -> dict:
+    try:
+        with open(cache_path()) as stream:
+            data = json.load(stream)
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def save_cache(mac: str, state: dict) -> None:
+    """Remember what this device supports, and the last value it reported.
+
+    The AirPods dump their config block once, shortly after the AACP session
+    comes up. A client that connects later — or a reconnect where the device
+    does not resend — sees no config at all. Support is a property of the
+    device, not of the session, so it is remembered here; without this the
+    panel hides controls that work perfectly well. Values are cached alongside
+    so the controls render populated rather than blank, and any live report
+    overwrites them.
+    """
+    if not mac:
+        return
+    data = load_cache()
+    entry = data.get(mac) or {}
+    entry["supports"] = {**(entry.get("supports") or {}), **state["supports"]}
+    values = entry.get("values") or {}
+    for name in list(TOGGLES) + list(LEVELS):
+        if state["supports"].get(name):
+            values[name] = state[name]
+    if state["supports"].get("allowOff"):
+        values["allowOff"] = state["allowOff"]
+    entry["values"] = values
+    data[mac] = entry
+
+    target = cache_path()
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    handle, temp = tempfile.mkstemp(dir=os.path.dirname(target), prefix=".airpods-cap.")
+    try:
+        with os.fdopen(handle, "w") as stream:
+            json.dump(data, stream)
+        os.replace(temp, target)
+    except BaseException:
+        try:
+            os.unlink(temp)
+        except OSError:
+            pass
+
+
+def seed_from_cache(state: dict, mac: str) -> None:
+    entry = load_cache().get(mac) or {}
+    supports = entry.get("supports") or {}
+    values = entry.get("values") or {}
+    for name, supported in supports.items():
+        if supported:
+            state["supports"][name] = True
+    for name, value in values.items():
+        if name in state:
+            state[name] = value
+    state["stale"] = bool(supports)
+
+
+def blank_state() -> dict:
+    return {
+        "daemon": False,
+        "connected": False,
+        "mac": "",
+        "name": "",
+        "productId": 0,
+        "mode": "",
+        "modeByte": 0,
+        # AirPods Pro accept listening-mode Off without ever reporting
+        # AllowOffOption, so absence of the identifier is not a refusal.
+        # Only an explicit report flips this off.
+        "allowOff": True,
+        # Every toggle defaults off and every level to zero; `supports` is what
+        # says whether the device has actually spoken about one, so the shell
+        # never renders a control from a default it was never told.
+        **{name: False for name in TOGGLES},
+        **{name: 0 for name in LEVELS},
+        # Which config identifiers the device has actually reported. A toggle
+        # for something never reported would be a switch that claims to know a
+        # state it has never been told, so the shell hides those instead.
+        "supports": {},
+        # True when the controls are drawn from remembered capabilities rather
+        # than something the device said this session.
+        "stale": False,
+        # Addresses this bridge has seen AirPods on, so the shell can tell
+        # "BlueZ has our device connected but the daemon never picked it up"
+        # apart from "some other headset is connected". Survives restarts via
+        # the capability cache.
+        "knownMacs": sorted(load_cache().keys()),
+        # Projected minutes until the lowest bud is empty; -1 until the drain
+        # samples can support an answer.
+        "minutesLeft": -1,
+        "battery": {},
+        "ear": {},
+        "audioAvailable": True,
+        "updatedAt": 0,
+        "error": "",
+    }
+
+
+def apply_event(state: dict, event) -> None:
+    """Fold one AppEvent into the flat state the shell reads."""
+    if event == "AudioUnavailable":
+        state["audioAvailable"] = False
+        return
+    if not isinstance(event, dict):
+        return
+
+    if "DeviceConnected" in event:
+        info = event["DeviceConnected"]
+        state["connected"] = True
+        state["mac"] = info.get("mac", "")
+        state["name"] = info.get("name", "")
+        state["productId"] = info.get("product_id", 0)
+        state["audioAvailable"] = True
+        seed_from_cache(state, state["mac"])
+        if state["mac"] and state["mac"] not in state["knownMacs"]:
+            state["knownMacs"] = sorted(set(state["knownMacs"]) | {state["mac"]})
+        return
+
+    if "DeviceDisconnected" in event:
+        BATTERY_HISTORY.clear()
+        state.update(connected=False, battery={}, ear={}, mode="", modeByte=0,
+                     minutesLeft=-1)
+        return
+
+    if "AACPEvent" not in event:
+        return
+
+    _mac, payload = event["AACPEvent"]
+    if payload == "ConnectionLost":
+        state.update(connected=False, battery={}, ear={}, mode="", modeByte=0)
+        return
+    if not isinstance(payload, dict):
+        return
+
+    if "BatteryInfo" in payload:
+        for entry in payload["BatteryInfo"]:
+            name = COMPONENTS.get(entry.get("component"))
+            if not name:
+                continue
+            status = BATTERY_STATUS.get(entry.get("status"), "unknown")
+            if status == "disconnected":
+                # The case reports level 0 / disconnected whenever the buds are
+                # not sitting in it — it only knows its charge through them,
+                # lid open or shut. Keep the component with a null level so the
+                # shell can say "unavailable" rather than either inventing a 0%
+                # or silently dropping a row the user knows should be there.
+                state["battery"][name] = {
+                    "level": -1,
+                    "status": status,
+                    "charging": False,
+                }
+                continue
+            state["battery"][name] = {
+                "level": entry.get("level", 0),
+                "status": status,
+                "charging": status == "charging",
+            }
+        update_estimate(state)
+        return
+
+    if "ControlCommand" in payload:
+        command = payload["ControlCommand"]
+        identifier = command.get("identifier")
+        value = command.get("value") or []
+        if not value:
+            return
+        byte = value[0]
+        if identifier == LISTENING_MODE:
+            state["modeByte"] = byte
+            state["mode"] = MODE_NAMES.get(byte, "")
+        elif identifier == ALLOW_OFF:
+            state["allowOff"] = byte == 1
+            state["supports"]["allowOff"] = True
+        elif identifier in TOGGLES_BY_ID:
+            name = TOGGLES_BY_ID[identifier]
+            state[name] = byte == 1
+            state["supports"][name] = True
+            state["stale"] = False
+            save_cache(state.get("mac", ""), state)
+        elif identifier in LEVELS_BY_ID:
+            name = LEVELS_BY_ID[identifier]
+            state[name] = byte
+            state["supports"][name] = True
+            state["stale"] = False
+            save_cache(state.get("mac", ""), state)
+        return
+
+    if "ConversationalAwareness" in payload:
+        # A live talking/not-talking signal, distinct from the config toggle.
+        state["speaking"] = payload["ConversationalAwareness"] == 1
+        return
+
+    if "EarDetection" in payload:
+        detection = payload["EarDetection"]
+        for side in ("left", "right"):
+            raw = detection.get(f"new_{side}")
+            if raw is not None:
+                state["ear"][side] = EAR_STATUS.get(raw, "unknown")
+        return
+
+
+def write_state(state: dict) -> None:
+    state["updatedAt"] = int(time.time())
+    target = state_path()
+    directory = os.path.dirname(target)
+    handle, temp = tempfile.mkstemp(dir=directory, prefix=".omarchy-airpods.")
+    try:
+        with os.fdopen(handle, "w") as stream:
+            json.dump(state, stream)
+        os.replace(temp, target)
+    except BaseException:
+        try:
+            os.unlink(temp)
+        except OSError:
+            pass
+        raise
+
+
+def resolve_mac(explicit: str | None) -> str:
+    """Commands are addressed to a MAC; take it from the watched state."""
+    if explicit:
+        return explicit
+    try:
+        with open(state_path()) as stream:
+            mac = json.load(stream).get("mac", "")
+    except (OSError, ValueError):
+        mac = ""
+    if mac:
+        return mac
+    # No state file yet — ask the daemon directly via a short-lived snapshot.
+    return snapshot().get("mac", "")
+
+
+def snapshot(timeout: float = 2.0) -> dict:
+    """Connect, drain the replayed snapshot, disconnect."""
+    state = blank_state()
+    try:
+        sock = connect(timeout)
+    except (OSError, socket.timeout) as error:
+        state["error"] = str(error)
+        return state
+    state["daemon"] = True
+    # The daemon replays its whole snapshot on connect and then goes quiet, so
+    # "quiet for a moment" is the only end-of-snapshot signal there is. 0.6s was
+    # too short and silently truncated the replay mid-way, which read as
+    # settings the device had never reported. Wait longer for the gap, and cap
+    # the total so a chatty device cannot hang the command.
+    deadline = time.monotonic() + 6.0
+    sock.settimeout(1.5)
+    try:
+        while time.monotonic() < deadline:
+            try:
+                apply_event(state, read_msg(sock))
+            except (socket.timeout, TimeoutError):
+                break
+    except (OSError, ValueError, ConnectionError):
+        pass
+    finally:
+        sock.close()
+    return state
+
+
+def send(payload, timeout: float = 5.0) -> int:
+    try:
+        sock = connect(timeout)
+    except (OSError, socket.timeout) as error:
+        print(f"airpods: daemon unreachable: {error}", file=sys.stderr)
+        return 1
+    try:
+        write_msg(sock, payload)
+        # The daemon acts on the frame asynchronously; give it a moment to be
+        # read before we tear the socket down.
+        time.sleep(0.15)
+    finally:
+        sock.close()
+    return 0
+
+
+def cmd_watch(_args) -> int:
+    """Own the socket for the shell's lifetime, reconnecting as needed."""
+    state = blank_state()
+    write_state(state)
+    while True:
+        try:
+            sock = connect(timeout=5.0)
+        except (OSError, socket.timeout):
+            if state["daemon"]:
+                state = blank_state()
+                write_state(state)
+            time.sleep(2.0)
+            continue
+
+        state["daemon"] = True
+        state["error"] = ""
+        write_state(state)
+        sock.settimeout(None)
+        try:
+            while True:
+                apply_event(state, read_msg(sock))
+                write_state(state)
+        except (OSError, ValueError, ConnectionError):
+            pass
+        finally:
+            sock.close()
+
+        state = blank_state()
+        write_state(state)
+        time.sleep(1.0)
+
+
+def cmd_status(_args) -> int:
+    print(json.dumps(snapshot(), indent=2))
+    return 0
+
+
+def cmd_set_mode(args) -> int:
+    mode = MODES.get(args.mode)
+    mac = resolve_mac(args.mac)
+    if not mac:
+        print("airpods: no connected device", file=sys.stderr)
+        return 1
+    return send([mac, {"ControlCommand": [LISTENING_MODE, [mode]]}])
+
+
+def cmd_set(args) -> int:
+    raw = args.identifier
+    identifier = IDENTIFIERS.get(raw)
+    if identifier is None:
+        try:
+            identifier = int(raw, 0)
+        except ValueError:
+            print(f"airpods: unknown identifier '{raw}'", file=sys.stderr)
+            return 1
+    mac = resolve_mac(args.mac)
+    if not mac:
+        print("airpods: no connected device", file=sys.stderr)
+        return 1
+    return send([mac, {"ControlCommand": [identifier, [args.value]]}])
+
+
+def cmd_rename(args) -> int:
+    mac = resolve_mac(args.mac)
+    if not mac:
+        print("airpods: no connected device", file=sys.stderr)
+        return 1
+    return send([mac, {"Rename": args.name}])
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(prog="omarchy-airpods", description=__doc__)
+    parser.add_argument("--mac", help="target device; defaults to the connected one")
+    parser.add_argument("--state", help="state file path; defaults to $XDG_RUNTIME_DIR")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    sub.add_parser("watch").set_defaults(func=cmd_watch)
+    sub.add_parser("status").set_defaults(func=cmd_status)
+
+    mode = sub.add_parser("set-mode")
+    mode.add_argument("mode", choices=sorted(MODES))
+    mode.set_defaults(func=cmd_set_mode)
+
+    generic = sub.add_parser("set")
+    generic.add_argument("identifier")
+    generic.add_argument("value", type=lambda v: int(v, 0))
+    generic.set_defaults(func=cmd_set)
+
+    rename = sub.add_parser("rename")
+    rename.add_argument("name")
+    rename.set_defaults(func=cmd_rename)
+
+    args = parser.parse_args(argv)
+    if args.state:
+        global STATE_OVERRIDE
+        STATE_OVERRIDE = args.state
+    try:
+        return args.func(args)
+    except KeyboardInterrupt:
+        return 130
+
+
+if __name__ == "__main__":
+    sys.exit(main())

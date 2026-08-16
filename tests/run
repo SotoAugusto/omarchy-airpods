@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Run every test. No AirPods, daemon, or BlueZ required — the protocol tests
+# talk to a mock daemon on a private XDG_RUNTIME_DIR, so this is safe to run
+# while the real plugin is live.
+set -uo pipefail
+cd "$(dirname "$0")"
+status=0
+for suite in test_estimate.py test_protocol.py; do
+  echo "=== $suite ==="
+  python3 "$suite" || status=1
+  echo
+done
+exit $status

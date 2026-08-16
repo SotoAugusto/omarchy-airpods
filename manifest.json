@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.sotoaugusto.airpods",
+  "name": "AirPods",
+  "version": "0.1.0",
+  "author": "Augusto Soto",
+  "license": "MIT",
+  "description": "Battery, noise control and ear detection for AirPods, driven through the airpods-tui daemon",
+  "kinds": [
+    "bar-widget",
+    "service"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml",
+    "service": "Service.qml"
+  },
+  "barWidget": {
+    "displayName": "AirPods",
+    "description": "Battery and noise control for connected AirPods",
+    "category": "Network",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "barLabel": "Lowest battery",
+      "hideWhenDisconnected": true,
+      "lowBatteryThreshold": 20,
+      "forceAac": true,
+      "showGlobalShortcuts": true
+    },
+    "schema": [
+      {
+        "key": "showGlobalShortcuts",
+        "type": "boolean",
+        "label": "List global shortcuts",
+        "description": "Include the Hyprland bindings (Super+Alt+A, Super+Alt+N) in the shortcut list. Turn this off if you rebind or remove them, so the list does not advertise keys that no longer work.",
+        "defaultValue": true
+      },
+      {
+        "key": "forceAac",
+        "type": "boolean",
+        "label": "Force AAC on connect",
+        "description": "AirPods only support SBC and AAC, and the negotiated codec is not stable across reconnects — it has been observed dropping to SBC-XQ on its own. This re-selects the AAC card profile a few seconds after each connect.",
+        "defaultValue": true
+      },
+      {
+        "key": "barLabel",
+        "type": "enum",
+        "label": "Bar label",
+        "description": "What sits next to the glyph. Lowest battery is the number that actually matters — the bud that dies first ends the session.",
+        "options": [
+          "Lowest battery",
+          "Both buds",
+          "Noise mode",
+          "Icon only"
+        ],
+        "defaultValue": "Lowest battery"
+      },
+      {
+        "key": "hideWhenDisconnected",
+        "type": "boolean",
+        "label": "Hide when disconnected",
+        "description": "Take the widget out of the bar entirely while no AirPods are connected, rather than showing a dimmed glyph.",
+        "defaultValue": true
+      },
+      {
+        "key": "lowBatteryThreshold",
+        "type": "integer",
+        "label": "Low battery warning (%)",
+        "description": "Below this the bar label is tinted. 0 disables the warning.",
+        "min": 0,
+        "max": 50,
+        "step": 5,
+        "defaultValue": 20
+      }
+    ]
+  }
+}
