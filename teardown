@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Undo what setup did, and clean up what the plugin leaves behind.
+#
+# Run this BEFORE `omarchy plugin remove`, because removing the plugin deletes
+# this script along with everything else. Omarchy runs nothing from a plugin at
+# removal time — by design — so nothing here can be automatic.
+#
+# Deliberately conservative: the daemon and the BlueZ DeviceID are shared with
+# any other AirPods tool you might use, so removing them is offered rather than
+# assumed.
+set -uo pipefail
+
+BOLD=$'\e[1m'; GREEN=$'\e[32m'; YELLOW=$'\e[33m'; OFF=$'\e[0m'
+step() { printf '%s==>%s %s\n' "$BOLD" "$OFF" "$1"; }
+ok()   { printf '    %s✓%s %s\n' "$GREEN" "$OFF" "$1"; }
+warn() { printf '    %s!%s %s\n' "$YELLOW" "$OFF" "$1"; }
+
+ask() { printf '    %s [y/N] ' "$1"; read -r r; [[ ${r,,} == y* ]]; }
+
+CACHE="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/airpods-capabilities.json"
+STATE="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/omarchy-airpods.json"
+
+step "Removing this plugin's own state"
+# Everything below is written by the plugin and used by nothing else.
+rm -f "$CACHE" && ok "removed remembered device capabilities"
+rm -f "$STATE" && ok "removed live state"
+
+step "The airpods-tui daemon"
+if systemctl --user is-enabled airpods-tui >/dev/null 2>&1 ||
+   systemctl --user is-active  airpods-tui >/dev/null 2>&1; then
+  if ask "Stop and disable the daemon? Other AirPods tools may use it."; then
+    systemctl --user disable --now airpods-tui >/dev/null 2>&1
+    ok "stopped and disabled"
+  else
+    warn "left running"
+  fi
+else
+  ok "not running"
+fi
+
+step "The Apple DeviceID in /etc/bluetooth/main.conf"
+# Removing this makes AirPods behave like any other headset again: audio still
+# works, the control channel does not.
+if grep -qE '^\s*DeviceID\s*=\s*bluetooth:004C:' /etc/bluetooth/main.conf 2>/dev/null; then
+  warn "still set — the airpods-tui package reverts it on uninstall"
+  printf '    Remove the package too?  yay -R airpods-tui-bin\n'
+else
+  ok "not set"
+fi
+
+echo
+printf '%sLast step:%s omarchy plugin remove io.github.sotoaugusto.airpods\n' "$BOLD" "$OFF"
+printf '           omarchy restart shell\n'

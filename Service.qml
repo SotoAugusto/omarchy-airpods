@@ -369,6 +369,45 @@ Item {
     run(["set", "auto-anc-strength", String(clamped)])
   }
 
+  // ---- starting the daemon -------------------------------------------------
+
+  // Omarchy deliberately never runs anything from a plugin at install time, so
+  // "enable the service" would otherwise be a manual step in a README that
+  // people reasonably skip. The unit is a *user* unit, so starting it needs no
+  // privileges and the plugin can simply do it.
+  //
+  // If the unit does not exist the package is not installed, which is not
+  // something this can fix — so it stops asking and says so instead.
+  property bool daemonMissing: false
+  property int startAttempts: 0
+
+  Process {
+    id: startProc
+    onExited: function(code) {
+      // A missing unit exits non-zero. Distinguishing that from a unit that
+      // exists but failed to start matters: one is a install-the-package
+      // problem for the user, the other is worth retrying.
+      if (code !== 0) {
+        root.daemonMissing = true
+        console.warn("airpods: could not start airpods-tui (exit " + code
+                     + "); is the package installed?")
+      }
+    }
+  }
+
+  Timer {
+    id: startTimer
+    interval: 15000
+    repeat: false
+    running: !root.daemonRunning && !root.daemonMissing && root.startAttempts < 2
+    onTriggered: {
+      if (root.daemonRunning) return
+      root.startAttempts += 1
+      startProc.command = ["systemctl", "--user", "start", "airpods-tui"]
+      startProc.running = true
+    }
+  }
+
   // ---- daemon watchdog -----------------------------------------------------
 
   // The failure this exists for: on first enable the daemon started before

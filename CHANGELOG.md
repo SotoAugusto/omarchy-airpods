@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.1.2 — 2026-08-16
+
+### Added
+
+- `setup` and `teardown` scripts for the parts a plugin cannot do for itself.
+  Omarchy never executes anything from a plugin — it clones files, validates
+  the manifest and flips a bit — so installing the daemon, setting the BlueZ
+  `DeviceID` and restarting bluetooth are a script you run on purpose. Both are
+  idempotent; `setup` prompts for sudo only if the DeviceID is not already set.
+
+### Changed
+
+- The daemon now starts itself. If the `airpods-tui` user unit exists but is
+  not running, the plugin starts it — no privileges needed, so "enable the
+  service" is no longer a step anyone has to remember. If the unit does not
+  exist the plugin stops asking and says the package is missing, rather than
+  retrying something it cannot fix.
+- The disconnected panel now distinguishes its three causes: daemon starting,
+  package not installed, or connected-but-no-AirPods. Only one of those is
+  yours to fix, and it now says which.
+
 ## 0.1.1 — 2026-08-16
 
 ### Fixed

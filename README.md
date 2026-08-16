@@ -30,64 +30,51 @@ What is left for this plugin is the shell front end. See
 [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md) for the rest, including where the
 debt is knowledge rather than code.
 
-## Requirements
-
-[`airpods-tui`](https://github.com/annoyedmilk/airpods-tui) running as a daemon.
-It owns the Bluetooth session; this plugin talks to it, not to your AirPods.
-
-```bash
-yay -S airpods-tui-bin          # or airpods-tui-git to build from source
-sudo systemctl restart bluetooth
-systemctl --user enable --now airpods-tui
-```
-
-The package's install hook adds `DeviceID = bluetooth:004C:0000:0000` to
-`/etc/bluetooth/main.conf`, which makes your machine identify as Apple. Without
-it the AirPods pair and play audio, but refuse to open the control channel that
-everything here depends on — so the bluetooth restart must happen **before** you
-pair.
-
 ## Install
 
 ```bash
 omarchy plugin add https://github.com/SotoAugusto/omarchy-airpods --enable
 omarchy restart shell
+~/.config/omarchy/plugins/io.github.sotoaugusto.airpods/setup
 ```
+
+`setup` is the only step that needs your attention, and only the first time.
+It installs the [`airpods-tui`](https://github.com/annoyedmilk/airpods-tui)
+daemon if missing, adds `DeviceID = bluetooth:004C:0000:0000` to
+`/etc/bluetooth/main.conf` so BlueZ identifies as Apple, restarts bluetooth,
+and enables the daemon at login. It checks before every step and is safe to
+re-run. One sudo prompt, only if the DeviceID is not already set.
+
+**If setup changed the DeviceID, forget and re-pair your AirPods.** The control
+channel only opens on a pairing made after BlueZ started identifying as Apple —
+an existing pairing will not do. This is the single most common reason the
+widget shows nothing.
+
+Why a script rather than an install hook: Omarchy deliberately never executes
+anything from a plugin. It clones files, validates the manifest and flips a bit
+over IPC — no hooks, no sudo. That is a security property worth having, so what
+is left over is a script you run on purpose.
+
+Everything after that is automatic. The plugin starts the daemon if it finds it
+stopped, and restarts it if BlueZ reports the AirPods connected while the daemon
+disagrees for 30 seconds — both without privileges, because it is a user unit.
 
 ## Removal
 
 ```bash
+~/.config/omarchy/plugins/io.github.sotoaugusto.airpods/teardown
 omarchy plugin remove io.github.sotoaugusto.airpods
 omarchy restart shell
 ```
 
-That removes the plugin and its bar entry. Two things live outside the plugin
-directory and are left behind deliberately, since removing a shell widget
-should not reconfigure your audio or Bluetooth:
+Run `teardown` **first** — removing the plugin deletes the script with it. It
+clears the plugin's own state, then offers to stop the daemon and points at the
+package, rather than assuming: both are shared with any other AirPods tool you
+might use.
 
-```bash
-rm -f ~/.local/state/omarchy/airpods-capabilities.json   # remembered device capabilities
-```
-
-The `airpods-tui` daemon and the BlueZ `DeviceID` line belong to that package,
-not to this plugin — remove them with `yay -R airpods-tui-bin`, whose own hook
-reverts `/etc/bluetooth/main.conf`.
-
-## What it changes on your system
-
-Nothing at install time. While running it may, all of it documented and
-reversible:
-
-- write remembered device capabilities to
-  `~/.local/state/omarchy/airpods-capabilities.json` and live state to
-  `$XDG_RUNTIME_DIR/omarchy-airpods.json`
-- re-select the AAC PipeWire card profile on connect — turn off with the
-  **Force AAC on connect** setting
-- restart the `airpods-tui` **user** unit if BlueZ and the daemon disagree for
-  30 seconds, capped at three attempts
-
-It never uses sudo, never edits your Hyprland or shell config, and never
-touches `/etc`.
+Skipping teardown leaves one file behind,
+`~/.local/state/omarchy/airpods-capabilities.json`, a few hundred bytes of
+remembered device capabilities.
 
 ## What it does
 

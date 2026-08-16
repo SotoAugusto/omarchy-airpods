@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# One-time setup for everything this plugin cannot do for itself.
+#
+# Omarchy never runs anything from a plugin — it clones files, validates the
+# manifest and flips a bit — so nothing here happens automatically at install
+# time, by design. What is left needs either a package manager or root:
+#
+#   1. the airpods-tui daemon
+#   2. DeviceID in /etc/bluetooth/main.conf, so BlueZ identifies as Apple
+#   3. a bluetooth restart, which must happen before pairing
+#
+# Starting and supervising the daemon is not here: the plugin does that itself
+# at runtime, because a user unit needs no privileges.
+#
+# Safe to re-run. Every step checks before acting and skips if already done.
+set -uo pipefail
+
+BOLD=$'\e[1m'; DIM=$'\e[2m'; GREEN=$'\e[32m'; YELLOW=$'\e[33m'; RED=$'\e[31m'; OFF=$'\e[0m'
+step() { printf '%s==>%s %s\n' "$BOLD" "$OFF" "$1"; }
+ok()   { printf '    %s✓%s %s\n' "$GREEN" "$OFF" "$1"; }
+warn() { printf '    %s!%s %s\n' "$YELLOW" "$OFF" "$1"; }
+die()  { printf '    %s✗%s %s\n' "$RED" "$OFF" "$1"; exit 1; }
+
+CONF=/etc/bluetooth/main.conf
+changed_bluetooth=0
+
+step "Checking the airpods-tui daemon"
+if command -v airpods-tui >/dev/null 2>&1; then
+  ok "installed ($(airpods-tui -v 2>/dev/null | head -1))"
+else
+  warn "not installed"
+  if command -v yay >/dev/null 2>&1; then
+    printf '    Install airpods-tui-bin now? [y/N] '
+    read -r reply
+    [[ ${reply,,} == y* ]] || die "airpods-tui is required; nothing else to do"
+    yay -S --needed airpods-tui-bin || die "install failed"
+    ok "installed"
+  else
+    die "no yay found. Install it manually: https://github.com/annoyedmilk/airpods-tui"
+  fi
+fi
+
+step "Checking the Apple DeviceID in $CONF"
+# Without this the AirPods pair and play audio but refuse to open the AACP
+# control channel, which is the one thing this plugin needs.
+if grep -qE '^\s*DeviceID\s*=\s*bluetooth:004C:' "$CONF" 2>/dev/null; then
+  ok "already set"
+else
+  warn "missing — this needs sudo"
+  if grep -q '^\[General\]' "$CONF" 2>/dev/null; then
+    sudo sed -i '/^\[General\]/a DeviceID = bluetooth:004C:0000:0000' "$CONF" || die "could not edit $CONF"
+  else
+    printf '\n[General]\nDeviceID = bluetooth:004C:0000:0000\n' | sudo tee -a "$CONF" >/dev/null \
+      || die "could not edit $CONF"
+  fi
+  ok "set"
+  changed_bluetooth=1
+fi
+
+if (( changed_bluetooth )); then
+  step "Restarting bluetooth so the new DeviceID takes effect"
+  sudo systemctl restart bluetooth || die "could not restart bluetooth"
+  ok "restarted"
+fi
+
+step "Enabling the daemon at login"
+# The plugin starts the daemon when it finds it stopped, so this only makes it
+# survive a reboot without waiting for the shell to notice.
+if systemctl --user is-enabled airpods-tui >/dev/null 2>&1; then
+  ok "already enabled"
+else
+  systemctl --user enable --now airpods-tui || die "could not enable the user service"
+  ok "enabled and started"
+fi
+
+echo
+if (( changed_bluetooth )); then
+  printf '%sOne thing left:%s forget and re-pair your AirPods.\n' "$BOLD" "$OFF"
+  printf '%s  The control channel only opens on a pairing made after BlueZ\n' "$DIM"
+  printf '  started identifying as Apple, so an existing pairing will not do.%s\n' "$OFF"
+else
+  printf '%sReady.%s Connect your AirPods and the widget appears in the bar.\n' "$BOLD" "$OFF"
+fi

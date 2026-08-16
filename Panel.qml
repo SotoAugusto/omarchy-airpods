@@ -1043,9 +1043,19 @@ Panel {
           color: root.dim
           font.family: Style.font.family
           font.pixelSize: Style.font.body
-          text: root.daemonRunning
-            ? "No AirPods connected. Connect them and the controls appear here."
-            : "The airpods-tui daemon is not running.\n\nStart it with:\nsystemctl --user enable --now airpods-tui"
+          // State-specific, because "it does not work" has three different
+          // causes here and only one of them is the user's to fix.
+          text: {
+            if (root.daemonRunning)
+              return "No AirPods connected. Connect them and the controls appear here."
+            if (root.service && root.service.daemonMissing)
+              return "The airpods-tui daemon is not installed.\n\n"
+                   + "  yay -S airpods-tui-bin\n"
+                   + "  sudo systemctl restart bluetooth\n\n"
+                   + "Then forget and re-pair your AirPods — the control channel "
+                   + "only opens once BlueZ identifies as Apple."
+            return "Starting the airpods-tui daemon…"
+          }
         }
 
         Text {
