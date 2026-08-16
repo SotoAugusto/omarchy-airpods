@@ -53,6 +53,12 @@ SNAPSHOT = [
 # the shell holds them optimistically, so the mock reproduces it.
 ECHOES = {0x0D}
 
+# Writing this identifier makes the mock reply with a structurally invalid
+# event, so the bridge's resilience to a bad frame can be tested on purpose
+# rather than waited for.
+POISON = 0xFF
+POISON_EVENT = {"AACPEvent": [MAC, {"BatteryInfo": "not-a-list"}]}
+
 
 def write_msg(conn, payload):
     data = json.dumps(payload).encode()
@@ -84,6 +90,13 @@ def serve(conn):
             if "ControlCommand" not in command:
                 continue
             identifier, value = command["ControlCommand"]
+            if identifier == POISON:
+                for peer in list(CLIENTS):
+                    try:
+                        write_msg(peer, POISON_EVENT)
+                    except OSError:
+                        CLIENTS.discard(peer)
+                continue
             if identifier not in ECHOES:
                 continue
             # Broadcast, like the daemon's own channel — not just to the sender.

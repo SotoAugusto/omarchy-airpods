@@ -514,7 +514,17 @@ def cmd_watch(_args) -> int:
         sock.settimeout(None)
         try:
             while True:
-                apply_event(state, read_msg(sock))
+                message = read_msg(sock)
+                # A single surprising event must not take the watcher down with
+                # it. Losing this process costs more than the event is worth:
+                # the shell falls back to stale state, and the drain history —
+                # which takes ten minutes of wearing to rebuild — starts over.
+                # Socket-level failures still fall through to the reconnect.
+                try:
+                    apply_event(state, message)
+                except Exception as error:  # noqa: BLE001 - deliberate backstop
+                    print(f"airpods: skipped a bad event: {error!r}", file=sys.stderr,
+                          flush=True)
                 write_state(state)
         except (OSError, ValueError, ConnectionError):
             pass

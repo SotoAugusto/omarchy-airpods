@@ -102,6 +102,16 @@ def main():
         check("cache remembers value", entry["values"]["ancStrength"], 50)
         check("known macs published", read_state()["knownMacs"], [MAC])
 
+        print("\na malformed event does not kill the watcher")
+        # Losing the watcher costs the drain history, which takes ten minutes
+        # of wearing to rebuild, so one bad frame must not be fatal.
+        run("set", "255", "1")
+        time.sleep(1.5)
+        check("watcher alive after bad frame", watcher.poll(), None)
+        run("set-mode", "anc")
+        time.sleep(1.5)
+        check("still processing after bad frame", read_state()["mode"], "anc")
+
         print("\ndaemon disappears")
         daemon.terminate()
         daemon.wait(timeout=5)
@@ -113,6 +123,7 @@ def main():
 
         result = run("set-mode", "anc")
         check("command without daemon exits non-zero", result.returncode != 0, True)
+
     finally:
         for proc in (watcher, daemon):
             if proc and proc.poll() is None:
