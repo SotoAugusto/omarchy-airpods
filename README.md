@@ -16,7 +16,12 @@ This plugin draws no Bluetooth frames of its own. It stands on two projects:
 - **[LibrePods](https://github.com/librepods-org/librepods)** — the project that
   reverse-engineered Apple's AACP protocol and made AirPods legible on
   non-Apple platforms. Every Linux AirPods tool, this one included, exists
-  downstream of that work.
+  downstream of that work. Its Linux client has been rewritten from Qt to Rust
+  (the `linux/rust` branch, packaged as `librepods-rust-bin`), an `iced` desktop
+  app with a tray icon that is now growing beyond Apple hardware. It is the
+  natural choice if you want a GUI rather than a bar widget — this plugin does
+  not drive it, because the Rust rewrite exposes no CLI or IPC for anything
+  outside its own window to talk to.
 - **[airpods-tui](https://github.com/annoyedmilk/airpods-tui)** by annoyedmilk —
   the daemon this plugin actually speaks to. It owns the L2CAP session, the
   protocol, ear detection and media handling.

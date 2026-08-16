@@ -31,11 +31,25 @@ plugin is MIT rather than GPL. If that reading is ever disputed, relicensing to
 match is the obvious remedy and no great loss.
 
 **[LibrePods](https://github.com/librepods-org/librepods)** — AGPL-3.0-or-later.
-Not used here, but it is the project that made Apple's AACP protocol legible on
-non-Apple platforms, and the lineage every Linux AirPods tool now stands on.
-Evaluated alongside airpods-tui before starting; the deciding factor was that
-its Rust rewrite dropped the `librepods-ctl` CLI and exposes no IPC, so nothing
-outside its own GUI can drive it.
+Not used here, and no code or protocol constant in this plugin came from it —
+but it is the project that made Apple's AACP protocol legible on non-Apple
+platforms, and the lineage every Linux AirPods tool now stands on.
+
+Its **Rust port** deserves naming specifically. The Linux client was rewritten
+from Qt/C++ to Rust on the `linux/rust` branch — `iced` for the UI, `ksni` for
+the tray, `bluer` for Bluetooth — and it is what `librepods-rust-bin` and
+`librepods-rust-git` package. It is also expanding past Apple: `devices/nothing.rs`
+and a device-type registry mean it is becoming a multi-vendor earbud app rather
+than an AirPods one.
+
+It was evaluated alongside airpods-tui before any of this was written. The
+deciding factor was not quality: the Qt client shipped a `librepods-ctl` CLI,
+and the Rust rewrite dropped it without replacing it — its `dbus-crossroads`
+dependency comes from the tray library, not a control interface. Its entire
+argument surface is `--debug`, `--no-tray`, `--start-minimized`, `--le-debug`
+and `--version`. Nothing outside its own window can drive it, which rules it
+out as a backend for a bar widget and rules it *in* as the better choice for
+anyone who wants a desktop app.
 
 ## Runs inside
 
