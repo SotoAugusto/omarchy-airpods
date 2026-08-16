@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.1.8 — 2026-08-16
+
+### Added
+
+- A **Bar label** selector in the panel settings — Battery / Both / Icon —
+  so the bar display can be changed by clicking rather than by knowing that
+  `omarchy bar set` exists. It writes the setting back the way the first-party
+  clock does when it cycles its own format, merging into the existing entry
+  rather than replacing it.
+
+### Removed
+
+- The `Noise mode` bar label option, which had become an exact duplicate of
+  `Icon only`. It made sense when the bar icon was a static headphone and the
+  label carried the mode; since the icon *is* the mode glyph, the label had
+  nothing left to add. Anyone who had it selected keeps the behaviour they were
+  seeing rather than being silently moved to a percentage.
+
+### Fixed
+
+- A stale `glyph` reference in the vertical-bar layout, left over from
+  splitting the bar and hero glyphs apart. It only evaluated on a vertical bar,
+  so it had been logging a ReferenceError unnoticed.
+
 ## 0.1.7 — 2026-08-16
 
 ### Fixed

@@ -135,6 +135,10 @@ bytes of remembered device capabilities. Removing the package is what reverts
 | `a` | Conversation awareness |
 | `s` / `k` | Show settings / shortcuts |
 
+The bar label — lowest charge, both buds, or the glyph alone — is a selector in
+the panel's settings section. Everything else is `omarchy bar set <id> <key>
+<value>`.
+
 Right-click flips that specific pair because it is what the AirPods' own
 press-and-hold does, and because every other Omarchy bar widget uses right-click
 for one action rather than a long cycle.

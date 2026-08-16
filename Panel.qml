@@ -65,8 +65,10 @@ Panel {
   // so the label is stacked under the glyph as its own cell instead.
   readonly property var verticalLines: {
     var lines = [barGlyph]
+    // barLabelText is never a glyph now that "Noise mode" is gone, so there is
+    // nothing to guard against duplicating.
     var label = barLabelText
-    if (label !== "" && label !== glyph) lines.push(label.replace("%", ""))
+    if (label !== "") lines.push(label.replace("%", ""))
     return lines
   }
 
@@ -177,13 +179,34 @@ Panel {
 
   // ---- bar label -----------------------------------------------------------
 
+  readonly property var barLabelOptions: ["Lowest battery", "Both buds", "Icon only"]
+
+  // "Noise mode" was an option until the bar glyph became the mode itself, at
+  // which point it rendered identically to "Icon only". Anyone who selected it
+  // keeps the behaviour they were seeing rather than being silently moved to
+  // a percentage.
+  readonly property string barLabelChoice: {
+    var choice = setting("barLabel", "Lowest battery")
+    return choice === "Noise mode" ? "Icon only" : choice
+  }
+
+  // Writing a setting from inside the widget: merge into the existing inline
+  // entry and hand the whole thing back, the way the first-party clock does
+  // when it cycles its own format.
+  function setBarLabel(value) {
+    if (value === barLabelChoice) return
+    var entry = { id: moduleName }
+    for (var key in settings) if (key !== "id") entry[key] = settings[key]
+    entry.barLabel = value
+    settings = entry
+    if (bar && bar.shell && typeof bar.shell.updateEntryInline === "function")
+      bar.shell.updateEntryInline(moduleName, entry)
+  }
+
   readonly property string barLabelText: {
     if (!connected) return ""
-    var choice = setting("barLabel", "Lowest battery")
+    var choice = barLabelChoice
     if (choice === "Icon only") return ""
-    // The bar icon is already the mode glyph, so this option has nothing
-    // left to add — repeating it would print the same mark twice.
-    if (choice === "Noise mode") return ""
     if (choice === "Both buds") {
       var left = batteryLevel("left"), right = batteryLevel("right")
       if (left < 0 && right < 0) return ""
@@ -778,6 +801,34 @@ Panel {
               font.pixelSize: Style.font.caption
             }
           }
+
+          // The one setting that works with no device attached, so it sits above the
+          // device-specific rows and stays usable while nothing is connected.
+          Column {
+            width: parent.width
+            spacing: Style.space(4)
+
+            Text {
+              text: "Bar label"
+              color: root.barForeground
+              font.family: Style.font.family
+              font.pixelSize: Style.font.body
+            }
+
+            ButtonGroup {
+              width: parent.width
+              options: [
+                { value: "Lowest battery", label: "Battery", tooltip: "Lowest bud charge" },
+                { value: "Both buds", label: "Both", tooltip: "Left / right charge" },
+                { value: "Icon only", label: "Icon", tooltip: "Just the mode glyph" }
+              ]
+              value: root.barLabelChoice
+              foreground: root.barForeground
+              accent: Color.accent
+              onChanged: function(value) { root.setBarLabel(value) }
+            }
+          }
+
 
           // Adaptive ANC strength. Only meaningful in Adaptive mode, so it dims
           // outside it rather than vanishing — hiding it would make the mode feel
