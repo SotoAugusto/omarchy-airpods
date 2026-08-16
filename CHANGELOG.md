@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.5 — 2026-08-16
+
+### Fixed
+
+- `teardown` now disables the plugin before cleaning up. Found by actually
+  running an uninstall: while the plugin is enabled its service holds a socket,
+  rewrites the state file, and — by design — restarts the daemon whenever it
+  finds it stopped. Teardown was being undone as it ran. The daemon came back
+  within eight seconds and the state file was recreated immediately, so a
+  completed uninstall still left a running daemon and a live state file behind.
+
 ## 0.1.4 — 2026-08-16
 
 ### Added

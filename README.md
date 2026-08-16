@@ -83,6 +83,10 @@ the plugin's own state, then offers to stop the daemon and points at the
 package, rather than assuming: both are shared with any other AirPods tool you
 might use.
 
+`teardown` disables the plugin before it cleans anything, because the plugin
+would otherwise undo the cleanup while it ran — it restarts the daemon on
+purpose whenever it finds it stopped.
+
 `omarchy plugin remove` needs no cleanup of its own: because the plugin is
 git-installed it takes the `rm -rf` path rather than leaving a backup folder,
 and disabling strips the widget's entry from `shell.json`. Note that this also

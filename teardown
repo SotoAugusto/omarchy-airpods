@@ -19,6 +19,20 @@ ask() { printf '    %s [y/N] ' "$1"; read -r r; [[ ${r,,} == y* ]]; }
 
 CACHE="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/airpods-capabilities.json"
 STATE="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/omarchy-airpods.json"
+ID=io.github.sotoaugusto.airpods
+
+step "Stopping the plugin"
+# This has to come first. While the plugin is enabled its service holds a
+# socket, rewrites the state file, and — by design — restarts the daemon
+# whenever it finds it stopped. Cleaning up underneath a running plugin means
+# watching it undo the work: measured, the daemon came back within eight
+# seconds and the state file was recreated immediately.
+if omarchy plugin list 2>/dev/null | grep -q "^$ID .*enabled"; then
+  omarchy plugin disable "$ID" >/dev/null 2>&1 && ok "disabled; its service is unmounted"
+  sleep 2
+else
+  ok "already disabled"
+fi
 
 step "Removing this plugin's own state"
 # Everything below is written by the plugin and used by nothing else.
