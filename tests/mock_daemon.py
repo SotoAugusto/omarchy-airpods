@@ -59,6 +59,11 @@ ECHOES = {0x0D}
 POISON = 0xFF
 POISON_EVENT = {"AACPEvent": [MAC, {"BatteryInfo": "not-a-list"}]}
 
+# Writing this makes the mock emit a burst of the live talking signal and a
+# batch of unchanged battery reports — the two things a real device sends
+# repeatedly without the shell needing to redraw.
+CHATTER = 0xFE
+
 
 def write_msg(conn, payload):
     data = json.dumps(payload).encode()
@@ -90,6 +95,17 @@ def serve(conn):
             if "ControlCommand" not in command:
                 continue
             identifier, value = command["ControlCommand"]
+            if identifier == CHATTER:
+                for _ in range(25):
+                    for peer in list(CLIENTS):
+                        try:
+                            write_msg(peer, {"AACPEvent": [MAC, {"ConversationalAwareness": 1}]})
+                            write_msg(peer, {"AACPEvent": [MAC, {"ConversationalAwareness": 2}]})
+                            write_msg(peer, {"AACPEvent": [MAC, {"BatteryInfo": [
+                                {"component": 4, "level": 85, "status": 2}]}]})
+                        except OSError:
+                            CLIENTS.discard(peer)
+                continue
             if identifier == POISON:
                 for peer in list(CLIENTS):
                     try:

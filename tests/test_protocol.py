@@ -112,6 +112,20 @@ def main():
         time.sleep(1.5)
         check("still processing after bad frame", read_state()["mode"], "anc")
 
+        print("\nchatter does not cause writes")
+        # ConversationalAwareness is a live talking signal that fires
+        # continuously while the wearer speaks, and unchanged battery reports
+        # repeat. Neither alters anything the shell renders, so neither should
+        # cost a file write and a re-parse in every bar instance.
+        before = os.stat(state).st_mtime_ns
+        run("set", "254", "1")
+        time.sleep(3.0)
+        check("75 no-op events wrote nothing", os.stat(state).st_mtime_ns, before)
+        # ...but a real change must still get through.
+        run("set-mode", "transparency")
+        time.sleep(1.5)
+        check("a real change still writes", read_state()["mode"], "transparency")
+
         print("\ndaemon disappears")
         daemon.terminate()
         daemon.wait(timeout=5)

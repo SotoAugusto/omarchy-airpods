@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.1 — 2026-08-16
+
+### Fixed
+
+- Events that change nothing the shell renders no longer cost a state write.
+  Measured: a burst of 75 such events caused 75 file writes before, and none
+  now — each of which was also a JSON re-parse and a binding cascade in every
+  bar instance.
+- The live `ConversationalAwareness` talking signal is no longer recorded. It
+  fires continuously while the wearer speaks and nothing rendered it, so with
+  conversation awareness enabled it was the loudest write source in the
+  plugin — invisible in testing only because the setting was off.
+
 ## 0.1.0 — 2026-08-16
 
 First release.

@@ -404,8 +404,11 @@ def apply_event(state: dict, event) -> None:
         return
 
     if "ConversationalAwareness" in payload:
-        # A live talking/not-talking signal, distinct from the config toggle.
-        state["speaking"] = payload["ConversationalAwareness"] == 1
+        # A live talking/not-talking signal, distinct from the config toggle of
+        # the same name. Deliberately not stored: nothing renders it, and it
+        # fires continuously while the wearer speaks. Recording it would turn
+        # every utterance into a state write, a JSON re-parse, and a binding
+        # cascade on every monitor, to move a field no one reads.
         return
 
     if "EarDetection" in payload:
@@ -417,7 +420,21 @@ def apply_event(state: dict, event) -> None:
         return
 
 
-def write_state(state: dict) -> None:
+# Serialized form of the last write, so an event that changes nothing the shell
+# can see does not cost a file write and a re-parse in every bar instance.
+LAST_WRITTEN: str | None = None
+
+
+def write_state(state: dict, force: bool = False) -> None:
+    global LAST_WRITTEN
+    # updatedAt is excluded from the comparison on purpose: including it would
+    # make every write look different and defeat the check.
+    payload = json.dumps({k: v for k, v in state.items() if k != "updatedAt"},
+                         sort_keys=True)
+    if not force and payload == LAST_WRITTEN:
+        return
+    LAST_WRITTEN = payload
+
     state["updatedAt"] = int(time.time())
     target = state_path()
     directory = os.path.dirname(target)
