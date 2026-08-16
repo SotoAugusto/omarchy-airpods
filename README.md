@@ -45,7 +45,7 @@ pair.
 ## Install
 
 ```bash
-omarchy plugin add <repo-url> --enable
+omarchy plugin add https://github.com/SotoAugusto/omarchy-airpods --enable
 omarchy restart shell
 ```
 
