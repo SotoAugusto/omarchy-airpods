@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.1.10 — 2026-08-17
+
+### Fixed
+
+- `setup` skipped the Bluetooth restart and the re-pair warning on a fresh
+  install, then reported `Ready` while the control channel was still unusable.
+  Installing the daemon sets the BlueZ `DeviceID` as a side effect — the
+  airpods-tui package's own `post_install` hook writes it — so the check that
+  followed saw it already present and concluded nothing had changed. It now
+  asks whether the `DeviceID` was absent when the run started, which is true
+  however it came to be set.
+
+  Reported by a marketplace reviewer against 0.1.9. This was the worst
+  remaining bug in the project: it broke the first-run path specifically, and
+  the failure looked like a working install.
+
+- `tests/test_setup.sh` covers all four combinations of package-present and
+  DeviceID-present, and fails against 0.1.9.
+
 ## 0.1.9 — 2026-08-16
 
 ### Fixed

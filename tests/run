@@ -5,9 +5,9 @@
 set -uo pipefail
 cd "$(dirname "$0")"
 status=0
-for suite in test_estimate.py test_protocol.py; do
+for suite in test_estimate.py test_protocol.py test_setup.sh; do
   echo "=== $suite ==="
-  python3 "$suite" || status=1
+  case "$suite" in *.py) python3 "$suite" || status=1 ;; *.sh) bash "$suite" || status=1 ;; esac
   echo
 done
 exit $status

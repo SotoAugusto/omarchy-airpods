@@ -22,7 +22,17 @@ warn() { printf '    %s!%s %s\n' "$YELLOW" "$OFF" "$1"; }
 die()  { printf '    %s✗%s %s\n' "$RED" "$OFF" "$1"; exit 1; }
 
 CONF=/etc/bluetooth/main.conf
-changed_bluetooth=0
+
+has_device_id() { grep -qE '^[[:space:]]*DeviceID[[:space:]]*=[[:space:]]*bluetooth:004C:' "$CONF" 2>/dev/null; }
+
+# Sampled before anything runs, because installing the daemon can set the
+# DeviceID as a side effect: airpods-tui's own post_install hook writes it.
+# Asking "did I edit the file?" then answers no even though the file changed,
+# which skips the bluetooth restart and the re-pair warning and reports Ready
+# while the control channel is not yet usable. Ask "was it absent when we
+# started?" instead — that is true regardless of who set it.
+device_id_at_start=0
+has_device_id && device_id_at_start=1
 
 step "Checking the airpods-tui daemon"
 if command -v airpods-tui >/dev/null 2>&1; then
@@ -43,8 +53,12 @@ fi
 step "Checking the Apple DeviceID in $CONF"
 # Without this the AirPods pair and play audio but refuse to open the AACP
 # control channel, which is the one thing this plugin needs.
-if grep -qE '^\s*DeviceID\s*=\s*bluetooth:004C:' "$CONF" 2>/dev/null; then
-  ok "already set"
+if has_device_id; then
+  if (( device_id_at_start )); then
+    ok "already set"
+  else
+    ok "set by the airpods-tui package hook"
+  fi
 else
   warn "missing — this needs sudo"
   if grep -q '^\[General\]' "$CONF" 2>/dev/null; then
@@ -54,10 +68,13 @@ else
       || die "could not edit $CONF"
   fi
   ok "set"
-  changed_bluetooth=1
 fi
 
-if (( changed_bluetooth )); then
+# Absent when we started and present now, however it got there.
+needs_restart=0
+(( device_id_at_start )) || needs_restart=1
+
+if (( needs_restart )); then
   step "Restarting bluetooth so the new DeviceID takes effect"
   sudo systemctl restart bluetooth || die "could not restart bluetooth"
   ok "restarted"
@@ -74,7 +91,7 @@ else
 fi
 
 echo
-if (( changed_bluetooth )); then
+if (( needs_restart )); then
   printf '%sOne thing left:%s forget and re-pair your AirPods.\n' "$BOLD" "$OFF"
   printf '%s  The control channel only opens on a pairing made after BlueZ\n' "$DIM"
   printf '  started identifying as Apple, so an existing pairing will not do.%s\n' "$OFF"
