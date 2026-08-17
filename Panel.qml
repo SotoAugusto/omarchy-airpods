@@ -161,19 +161,25 @@ Panel {
     return service.ear[component] || ""
   }
 
+  // One headphone mark in three states, so the column reads at a glance:
+  // plain when worn, boxed when stowed in the case, struck when out but not
+  // in either. The previous in-case glyph was a save icon — a codepoint
+  // guessed and never rendered.
   function earGlyphOf(component) {
     var state = earStateOf(component)
     if (state === "in_ear") return "󰋎"
-    if (state === "in_case") return "󰂺"
-    if (state === "out_of_ear") return "󰋋"
+    if (state === "in_case") return "󰋌"
+    if (state === "out_of_ear") return "󰋏"
     return ""
   }
 
+  // A glyph this small cannot carry its own meaning, so hovering it says so
+  // in words. Charging is already shown by the bolt beside the percentage.
   function earTipOf(component) {
     var state = earStateOf(component)
-    if (state === "in_ear") return "In ear"
-    if (state === "in_case") return "In case"
-    if (state === "out_of_ear") return "Out of ear"
+    if (state === "in_ear") return "In your ear"
+    if (state === "in_case") return "In the case"
+    if (state === "out_of_ear") return "Out, not being worn"
     return ""
   }
 
@@ -581,6 +587,19 @@ Panel {
                 width: Style.space(14)
                 text: root.earGlyphOf(batteryRow.modelData.key)
                 visible: text !== ""
+
+                MouseArea {
+                  id: earMouse
+                  anchors.fill: parent
+                  anchors.margins: -Style.space(3)
+                  hoverEnabled: true
+                }
+
+                PanelToolTip {
+                  visible: earMouse.containsMouse
+                  text: root.earTipOf(batteryRow.modelData.key)
+                  fontFamily: Style.font.family
+                }
                 color: root.earStateOf(batteryRow.modelData.key) === "in_ear"
                   ? Color.accent
                   : root.dim

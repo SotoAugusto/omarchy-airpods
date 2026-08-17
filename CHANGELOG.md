@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.9 — 2026-08-16
+
+### Fixed
+
+- The per-bud marker for "in the case" was rendering a floppy disk. The
+  codepoint was guessed and never looked at. The three states now use one
+  headphone mark that actually distinguishes them — plain when worn, boxed
+  when stowed in the case, struck when out but not being worn. Previously
+  in-ear and out-of-ear were the same glyph separated only by colour.
+
+### Added
+
+- Hovering a bud's marker says what it means in words: "In your ear", "In the
+  case", "Out, not being worn". A ten-pixel glyph cannot carry its own meaning,
+  and `earTipOf` had been written and never attached to anything.
+
 ## 0.1.8 — 2026-08-16
 
 ### Added
