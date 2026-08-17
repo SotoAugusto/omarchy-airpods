@@ -90,6 +90,19 @@ else
   ok "enabled and started"
 fi
 
+step "Restarting the AirPods daemon"
+# A fresh DeviceID + bluetooth restart can leave the daemon holding the old
+# BlueZ session for a few seconds. Restart it once after setup so the first
+# post-setup connection is read through the Apple control channel.
+systemctl --user restart airpods-tui || die "could not restart the user service"
+ok "restarted"
+
+if command -v omarchy >/dev/null 2>&1; then
+  step "Reloading the Omarchy shell"
+  omarchy restart shell || die "could not restart omarchy shell"
+  ok "reloaded"
+fi
+
 echo
 if (( needs_restart )); then
   printf '%sOne thing left:%s forget and re-pair your AirPods.\n' "$BOLD" "$OFF"

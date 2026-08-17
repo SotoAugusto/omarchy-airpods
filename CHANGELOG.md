@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.11 — 2026-08-17
+
+### Fixed
+
+- `setup` now restarts the `airpods-tui` user service after completing the
+  BlueZ `DeviceID` and Bluetooth restart work, then reloads the Omarchy shell
+  when the `omarchy` command is available. On a fresh install the daemon could
+  start during the Bluetooth transition and keep reporting no connected
+  AirPods until manually restarted, leaving the bar icon hidden even though the
+  prerequisites were installed.
+
 ## 0.1.10 — 2026-08-17
 
 ### Fixed

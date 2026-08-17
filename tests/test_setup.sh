@@ -47,20 +47,28 @@ run_case() {
       -e "s|  sudo systemctl restart bluetooth .*|  echo RESTARTED_BLUETOOTH|" \
       -e "s|if systemctl --user is-enabled airpods-tui >/dev/null 2>&1; then|if false; then|" \
       -e "s|  systemctl --user enable --now airpods-tui .*|  echo ENABLED|" \
+      -e "s|systemctl --user restart airpods-tui .*|echo RESTARTED_DAEMON|" \
+      -e "s|if command -v omarchy >/dev/null 2>&1; then|if true; then|" \
+      -e "s|  omarchy restart shell .*|  echo RESTARTED_SHELL|" \
       "$SRC" > "$dir/setup"
   chmod +x "$dir/setup"
 
   out=$(printf 'y\n' | bash "$dir/setup" 2>&1)
 
   local got_restart=no got_repair=no
+  local got_daemon_restart=no got_shell_restart=no
   grep -q RESTARTED_BLUETOOTH <<<"$out" && got_restart=yes
   grep -q "forget and re-pair" <<<"$out" && got_repair=yes
+  grep -q RESTARTED_DAEMON <<<"$out" && got_daemon_restart=yes
+  grep -q RESTARTED_SHELL <<<"$out" && got_shell_restart=yes
 
-  if [[ $got_restart == "$want_restart" && $got_repair == "$want_restart" ]]; then
+  if [[ $got_restart == "$want_restart" && $got_repair == "$want_restart" \
+      && $got_daemon_restart == yes && $got_shell_restart == yes ]]; then
     printf '  ok   %s\n' "$name"
   else
-    printf '  FAIL %s: restart=%s re-pair=%s, wanted both %s\n' \
-           "$name" "$got_restart" "$got_repair" "$want_restart"
+    printf '  FAIL %s: bluetooth=%s re-pair=%s, wanted both %s; daemon=%s shell=%s, wanted yes\n' \
+           "$name" "$got_restart" "$got_repair" "$want_restart" \
+           "$got_daemon_restart" "$got_shell_restart"
     failures=$((failures + 1))
   fi
   rm -rf "$dir"
