@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.12 — 2026-08-17
+
+### Added
+
+- A first-run onboarding state. When `setup` has to establish the BlueZ
+  `DeviceID`, it writes a plugin-owned marker under
+  `~/.local/state/omarchy/airpods-onboarding.json`. The bar widget stays
+  visible after setup and says it is waiting for the user to forget and re-pair
+  the AirPods, instead of disappearing because no device is connected yet.
+  The marker is cleared automatically on the first successful AirPods control
+  connection.
+
 ## 0.1.11 — 2026-08-17
 
 ### Fixed

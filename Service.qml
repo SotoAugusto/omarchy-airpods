@@ -43,6 +43,7 @@ Item {
 
   readonly property bool daemonRunning: state.daemon === true
   readonly property bool connected: state.connected === true
+  readonly property bool onboardingWaiting: state.onboardingWaiting === true
   readonly property string deviceName: state.name || "AirPods"
   readonly property string mac: state.mac || ""
   readonly property string mode: state.mode || ""

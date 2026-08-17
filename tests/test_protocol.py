@@ -52,6 +52,11 @@ def main():
             with open(state) as handle:
                 return json.load(handle)
 
+        onboarding = os.path.join(root, "state", "omarchy", "airpods-onboarding.json")
+        os.makedirs(os.path.dirname(onboarding), exist_ok=True)
+        with open(onboarding, "w") as handle:
+            json.dump({"waitingForFirstConnection": True}, handle)
+
         print("snapshot folding")
         snap = json.loads(run("status").stdout)
         check("daemon reachable", snap["daemon"], True)
@@ -69,6 +74,8 @@ def main():
         check("supports populated", sorted(snap["supports"]),
               ["adaptiveVolume", "ancStrength", "conversationAwareness",
                "oneBudAnc", "sleepDetection", "volumeSwipe"])
+        check("first connection clears onboarding marker", os.path.exists(onboarding), False)
+        check("snapshot reports onboarding done", snap["onboardingWaiting"], False)
 
         print("\nwatch keeps the state file live")
         watcher = subprocess.Popen([BRIDGE, "--state", state, "watch"],

@@ -22,6 +22,8 @@ warn() { printf '    %s!%s %s\n' "$YELLOW" "$OFF" "$1"; }
 die()  { printf '    %s✗%s %s\n' "$RED" "$OFF" "$1"; exit 1; }
 
 CONF=/etc/bluetooth/main.conf
+STATE_HOME=${XDG_STATE_HOME:-"$HOME/.local/state"}
+ONBOARDING_MARKER=$STATE_HOME/omarchy/airpods-onboarding.json
 
 has_device_id() { grep -qE '^[[:space:]]*DeviceID[[:space:]]*=[[:space:]]*bluetooth:004C:' "$CONF" 2>/dev/null; }
 
@@ -78,6 +80,10 @@ if (( needs_restart )); then
   step "Restarting bluetooth so the new DeviceID takes effect"
   sudo systemctl restart bluetooth || die "could not restart bluetooth"
   ok "restarted"
+
+  mkdir -p "$(dirname "$ONBOARDING_MARKER")"
+  printf '{"waitingForFirstConnection":true}\n' > "$ONBOARDING_MARKER" \
+    || die "could not write onboarding marker"
 fi
 
 step "Enabling the daemon at login"

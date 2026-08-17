@@ -32,6 +32,7 @@ Panel {
 
   readonly property bool connected: service ? service.connected : false
   readonly property bool daemonRunning: service ? service.daemonRunning : false
+  readonly property bool onboardingWaiting: service ? service.onboardingWaiting : false
   readonly property string deviceName: service ? service.deviceName : "AirPods"
   readonly property string mode: service ? service.mode : ""
   readonly property bool allowOff: service ? service.allowOff : true
@@ -52,7 +53,7 @@ Panel {
   // unreachable in precisely the case it exists for: a fresh install with
   // nothing connected shows no icon, so there is nothing to click, and the
   // plugin looks broken rather than unconfigured.
-  visible: connected || needsSetup || !setting("hideWhenDisconnected", true)
+  visible: connected || needsSetup || onboardingWaiting || !setting("hideWhenDisconnected", true)
 
   readonly property color dim: Qt.darker(barForeground, 1.45)
 
@@ -92,6 +93,7 @@ Panel {
     // A wrench reads as "this needs configuring", which is exactly the state,
     // and distinguishes it from a device that is merely away.
     if (needsSetup) return "󰖷"
+    if (onboardingWaiting) return "󰋌"
     return "󰋌"
   }
 
@@ -469,7 +471,8 @@ Panel {
           meta: root.connected
             ? [root.lowestBattery >= 0 ? root.lowestBattery + "%" : "",
                root.modeLabel].filter(s => s !== "").join(" · ")
-            : (root.daemonRunning ? "Not connected" : "Daemon not running")
+            : (root.onboardingWaiting ? "Waiting for re-pair"
+              : (root.daemonRunning ? "Not connected" : "Daemon not running"))
 
           iconComponent: Text {
             text: root.identityGlyph
@@ -1411,6 +1414,8 @@ Panel {
           // State-specific, because "it does not work" has three different
           // causes here and only one of them is the user's to fix.
           text: {
+            if (root.onboardingWaiting)
+              return "Setup is finished. Forget your AirPods in Bluetooth settings, then pair them again. The controls appear here after the first reconnect."
             if (root.daemonRunning)
               return "No AirPods connected. Connect them and the controls appear here."
             if (root.service && root.service.daemonMissing)

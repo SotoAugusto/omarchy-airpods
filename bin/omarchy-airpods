@@ -212,6 +212,25 @@ def cache_path() -> str:
     return os.path.join(base, "omarchy", "airpods-capabilities.json")
 
 
+def onboarding_path() -> str:
+    base = os.environ.get("XDG_STATE_HOME", os.path.expanduser("~/.local/state"))
+    return os.path.join(base, "omarchy", "airpods-onboarding.json")
+
+
+def onboarding_waiting() -> bool:
+    return os.path.exists(onboarding_path())
+
+
+def clear_onboarding() -> None:
+    try:
+        os.unlink(onboarding_path())
+    except FileNotFoundError:
+        pass
+    except OSError as error:
+        print(f"airpods: could not clear onboarding marker: {error}", file=sys.stderr,
+              flush=True)
+
+
 def load_cache() -> dict:
     try:
         with open(cache_path()) as stream:
@@ -309,6 +328,10 @@ def blank_state() -> dict:
         "battery": {},
         "ear": {},
         "audioAvailable": True,
+        # Set by setup when it had to establish the Apple DeviceID. Until the
+        # first successful AACP connection, keep the bar reachable so the user
+        # sees "waiting for re-pair" instead of an apparently missing plugin.
+        "onboardingWaiting": onboarding_waiting(),
         "updatedAt": 0,
         "error": "",
     }
@@ -325,6 +348,9 @@ def apply_event(state: dict, event) -> None:
     if "DeviceConnected" in event:
         info = event["DeviceConnected"]
         state["connected"] = True
+        if state.get("onboardingWaiting"):
+            clear_onboarding()
+            state["onboardingWaiting"] = False
         state["mac"] = info.get("mac", "")
         state["name"] = info.get("name", "")
         state["productId"] = info.get("product_id", 0)

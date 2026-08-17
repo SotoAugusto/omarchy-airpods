@@ -53,22 +53,25 @@ run_case() {
       "$SRC" > "$dir/setup"
   chmod +x "$dir/setup"
 
-  out=$(printf 'y\n' | bash "$dir/setup" 2>&1)
+  out=$(printf 'y\n' | XDG_STATE_HOME="$dir/state" bash "$dir/setup" 2>&1)
 
   local got_restart=no got_repair=no
   local got_daemon_restart=no got_shell_restart=no
+  local got_onboarding=no
   grep -q RESTARTED_BLUETOOTH <<<"$out" && got_restart=yes
   grep -q "forget and re-pair" <<<"$out" && got_repair=yes
   grep -q RESTARTED_DAEMON <<<"$out" && got_daemon_restart=yes
   grep -q RESTARTED_SHELL <<<"$out" && got_shell_restart=yes
+  [[ -f "$dir/state/omarchy/airpods-onboarding.json" ]] && got_onboarding=yes
 
   if [[ $got_restart == "$want_restart" && $got_repair == "$want_restart" \
+      && $got_onboarding == "$want_restart" \
       && $got_daemon_restart == yes && $got_shell_restart == yes ]]; then
     printf '  ok   %s\n' "$name"
   else
-    printf '  FAIL %s: bluetooth=%s re-pair=%s, wanted both %s; daemon=%s shell=%s, wanted yes\n' \
+    printf '  FAIL %s: bluetooth=%s re-pair=%s onboarding=%s, wanted all %s; daemon=%s shell=%s, wanted yes\n' \
            "$name" "$got_restart" "$got_repair" "$want_restart" \
-           "$got_daemon_restart" "$got_shell_restart"
+           "$got_onboarding" "$got_daemon_restart" "$got_shell_restart"
     failures=$((failures + 1))
   fi
   rm -rf "$dir"
